@@ -18,10 +18,10 @@ This project was commissioned by the AHA to analyze the gap between charges and 
 
 ### Approach
 
-Compare 2011 hospital bills (Average Covered Charges) across the various treatments and compare to the reimbursement amounts (Average Total Payments) in order to identify the biggest discrepancies (5):
+Compare 2011 hospital bills (Average Covered Charges) across the various treatments and compare to the reimbursement amounts (Average Total Payments) in order to identify the biggest discrepancies ([5](https://data.cms.gov/browse?q=IPPS%202011&sortBy=relevance)):
 
-*Examine geographical region, type of treatments, and number of cases as potential factors
-*Refine the examples to the most inexplicable cases
-*Develop recommendations
+* Examine geographical region, type of treatments, and number of cases as potential factors
+* Refine the examples to the most inexplicable cases
+* Develop recommendations
 
 If time permits, repeat the analysis for the most recent 2016 data to see if anything has changed since the data was first made public.
