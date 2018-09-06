@@ -1,4 +1,5 @@
 <p align = "center">
+  
 ## *“Introduction to Data Science”* Capstone Project Proposal
 
 ### Background
