@@ -24,4 +24,4 @@ Compare 2011 hospital bills (Average Covered Charges) across the various treatme
 * Refine the examples to the most inexplicable cases
 * Develop recommendations
 
-If time permits, repeat the analysis for the most recent 2016 data to see if anything has changed since the data was first made public.
+If time permits, repeat the analysis for the most recent 2016 data to see if anything has changed since the information was first made public.
