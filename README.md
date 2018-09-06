@@ -10,7 +10,7 @@ Like the government, the AHA states they are committed to providing greater tran
 
 ### Problem
 
-The current procedure for reporting Medicare-eligible, in-patient hospital charges hinders the ability to accurately forecast and reconcile internal hospital financials.  Specifically, the inaccurate, disparate gap between reported charges and reimbursements has a ripple effect on other hospital financial records.  In addition, the inability of even hospitals themselves to explain the huge charges and variations fosters a negative public image that hospitals willy-nilly gouge consumers when they are at their most vulnerable.
+The current procedure for reporting Medicare-eligible, inpatient hospital charges hinders the ability to accurately forecast and reconcile internal hospital financials.  Specifically, the inaccurate, disparate gap between reported charges and reimbursements has a ripple effect on other hospital financial records.  In addition, the inability of even hospitals themselves to explain the huge charges and variations fosters a negative public image that hospitals willy-nilly gouge consumers when they are at their most vulnerable.
 
 ### Client
 
