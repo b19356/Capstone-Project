@@ -1,4 +1,4 @@
-## *->“Introduction to Data Science”* Capstone Project Proposal<-
+## ->*“Introduction to Data Science”* Capstone Project Proposal<-
 
 ### Background
 
