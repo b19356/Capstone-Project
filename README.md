@@ -7,3 +7,21 @@ Under President Obama, the federal government initiated an effort to unveil the 
 Although the data reflect charges after claim resolution, the American Hospital Association (AHA) has protested that the charges do not accurately reveal what consumers are charged because they do not contain updated information after further negotiations with insurance companies ([2]( http://www.modernhealthcare.com/article/20170831/NEWS/170839968)).  The government, however, is not privy to insurance information, nor is it shared among hospitals.  Assuming the AHA is correct, then the consumer guides stemming from CMS reports are misleading.
 
 Like the government, the AHA states they are committed to providing greater transparency and want to publish accurate information about their charges ([4](https://www.aha.org/issue-brief/2018-05-04-hospital-price-transparency)).  One of the primary challenges is that insurance companies do not want to reveal their charges and reimbursements.
+
+### Problem
+
+The current procedure for reporting Medicare-eligible, in-patient hospital charges hinders the ability to accurately forecast and reconcile internal hospital financials.  Specifically, the inaccurate, disparate gap between reported charges and reimbursements has a ripple effect on other hospital financial records.  In addition, the inability of even hospitals themselves to explain the huge charges and variations fosters a negative public image that hospitals willy-nilly gouge consumers when they are at their most vulnerable.
+
+### Client
+
+This project was commissioned by the AHA to analyze the gap between charges and reimbursements in order to recommend changes to the current reporting process.  The project will provide recommendations for handling specific treatments to ultimately improve internal financial record keeping.  If implemented, the recommendations may also serve to mend negative public perceptions.
+
+### Approach
+
+Compare 2011 hospital bills (Average Covered Charges) across the various treatments and compare to the reimbursement amounts (Average Total Payments) in order to identify the biggest discrepancies (5):
+
+*Examine geographical region, type of treatments, and number of cases as potential factors
+*Refine the examples to the most inexplicable cases
+*Develop recommendations
+
+If time permits, repeat the analysis for the most recent 2016 data to see if anything has changed since the data was first made public.
