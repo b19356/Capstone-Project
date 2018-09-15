@@ -111,7 +111,10 @@ provider_sepDRG <- provider_sepDRG %>%
          Provider_City = `Provider City`, Provider_State = `Provider State`,
          Provider_Zip_Code = `Provider Zip Code`, 
          Hospital_Referral_Region_Description = `Hospital Referral Region Description`,
-         Provider_Total_Discharges = `Total Discharges`, Provider_Avg_Covered_Charges = `Average Covered Charges`, Provider_Avg_Total_Payments = `Average Total Payments`, Provider_Avg_Medicare_Payments = `Average Medicare Payments`)
+         Provider_Total_Discharges = `Total Discharges`, 
+         Provider_Avg_Covered_Charges = `Average Covered Charges`, 
+         Provider_Avg_Total_Payments = `Average Total Payments`, 
+         Provider_Avg_Medicare_Payments = `Average Medicare Payments`)
 
 # Confirm in console that columns are renamed
 
@@ -133,7 +136,7 @@ provider_sepDRG$Provider_Avg_Medicare_Payments %>% range()
 ```
 ##### The steps above yield a cleaned-up file called provider_sepDRG at the  hospital level.
 
-# -------------------------------------------------------------------------------
+# _____________________________________________________________________
 
 ### 2. Merge National and State files with Provider  
   
@@ -259,7 +262,8 @@ colnames(provider_sepDRG_Nat_State)
 
 # Remove repeat columns that are not needed
 
-provider_sepDRG_Nat_State <- provider_sepDRG_Nat_State %>% select (-c(DRG.Definition, DRG_Definition.y, DRG_Definition.y))
+provider_sepDRG_Nat_State <- provider_sepDRG_Nat_State %>% 
+  select (-c(DRG.Definition, DRG_Definition.y, DRG_Definition.y))
 
 View(provider_sepDRG_Nat_State)
 
@@ -278,8 +282,8 @@ colnames(provider_sepDRG_Nat_State)
 
 # Check to make sure there are 100 unique National DRG Covered Charges
 
-check <- data.frame(provider_sepDRG_Nat_State %>% group_by(DRG_Number) %>% summarise(National = 
-                                                                   n_distinct(Nat_Avg_Covered_Charges)))
+check <- data.frame(provider_sepDRG_Nat_State %>% group_by(DRG_Number) %>% 
+                      summarise(National = n_distinct(Nat_Avg_Covered_Charges)))
 
 check # View in console
 
