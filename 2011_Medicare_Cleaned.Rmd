@@ -21,7 +21,7 @@ library(tidyverse)
 ##### Load provider data 
 
 ```{r eval = FALSE}
-# Do I need to use setwd() so this file can be opened up from GitHub?
+
 # This file contains data at the individual hopsital (provider) level.
 
 provider <- read_csv("C:\\Users\\bliss\\Desktop\\Practice\\2011.csv")
