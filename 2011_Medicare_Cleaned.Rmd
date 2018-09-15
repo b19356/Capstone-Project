@@ -94,7 +94,8 @@ gut_check
 ##### Rename variables 
 
 ```{r eval = FALSE}
-# Viewing the data in a table format via the console revealed tha all the variables are encased #in backticks.  Backticks can sometimes cause a problem in statistical analysis.
+# Viewing the data in a table format via the console revealed tha all the variables are encased 
+#in backticks.  Backticks can sometimes cause a problem in statistical analysis.
 # The variables will be renamed to exclude the backticks.
 # Will also rename key variables by adding the word "Provider" to differentiate provider
 # variables from National and State
@@ -132,13 +133,13 @@ provider_sepDRG$Provider_Avg_Medicare_Payments %>% range()
 ```
 ##### The steps above yield a cleaned-up file called provider_sepDRG at the  hospital level.
 
-# ----------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 
 ### 2. Merge National and State files with Provider  
-\  
+  
 
 #### Medicare also provides 2011 National and State files.
-\  
+ 
 
 ##### Load national data and repeat similar cleaning exercises as in provider file.
 
