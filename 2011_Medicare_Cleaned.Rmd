@@ -1,26 +1,34 @@
 ---
 title: "2011_Medicare_Cleanup"
-output: html_document
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+editor_options:
+  chunk_output_type: inline
 ---
 
-### The first objective is to clean up the 2011 Medicare hospital provider file for analysis.
+### The first objective is to clean up the 2011 Medicare hospital Provider file for analysis.
 * provider_sepDRG
 
-### The second objective is to merge the National and State files with the provider file.
-* provider_sepDRG_Nat_State
+### The second objective is to clean up the National and State files.
+* National_Average_CMS
+* State_Average_CMS
 
+### The third objective is to merge the National file with the Provider file.
+* provider_sepDRG_Nat
 
 ### 1. Clean Provider File
 
 
 ##### Load package 
-```{r eval = FALSE}
+```{r eval = TRUE}
 library(tidyverse)
 ```
 
 ##### Load provider data 
 
-```{r eval = FALSE}
+```{r eval = TRUE}
 
 # This file contains data at the individual hopsital (provider) level.
 
@@ -29,7 +37,7 @@ provider <- read_csv("C:\\Users\\bliss\\Desktop\\Practice\\2011.csv")
 
 ##### Assess structure 
 
-```{r eval = FALSE}
+```{r eval = TRUE}
 # Ensure formats are appropriate for associated variables
 # No formatting changes are necessary since chr, int, and dbl are assigned correctly.
 
@@ -39,7 +47,7 @@ glimpse(provider)
 
 ##### Explore missing values 
 
-```{r eval = FALSE}
+```{r eval = TRUE}
 # No missing values were found overall, but will double check each variable individually.
 sum(is.na(provider))
 
@@ -70,7 +78,7 @@ sum(is.na(provider$`Average Medicare Payments`))
 
 ##### Separate columns
 
-```{r eval = FALSE}
+```{r eval = TRUE}
 # The DRG number and the associated medical condition are under one variable.
 # Ultimately want to assess if each DRG number matches a unique condition.
 # It will be easier to compare DRG numbers to descriptions if the columns are separated.
@@ -83,7 +91,7 @@ View(provider_sepDRG)
 
 ##### Assess DRG number vs. Definition
 
-```{r eval = FALSE}
+```{r eval = TRUE}
 # Each of the 100 DRG numbers does indeed correspond to a unique medical description.
 # Viewing the output in a data frame makes it easier to see the 1:1 correspondence.
 
@@ -93,7 +101,7 @@ gut_check
 ```
 ##### Rename variables 
 
-```{r eval = FALSE}
+```{r eval = TRUE}
 # Viewing the data in a table format via the console revealed tha all the variables are encased 
 #in backticks.  Backticks can sometimes cause a problem in statistical analysis.
 # The variables will be renamed to exclude the backticks.
@@ -123,7 +131,7 @@ tbl_df(provider_sepDRG)
 ```
 ##### Examine variable range
 
-```{r eval = FALSE}
+```{r eval = TRUE}
 # Screen int and dbl columns to identify any negative values (don't worry about zip codes)
 
 # No negative values were found
@@ -136,17 +144,28 @@ provider_sepDRG$Provider_Avg_Medicare_Payments %>% range()
 ```
 ##### The steps above yield a cleaned-up file called provider_sepDRG at the  hospital level.
 
+```{r eval = TRUE}
+
+# Save a cleaned up provider file for future data analysis.
+
+write_csv(x = provider_sepDRG, 
+          path = "C:\\Users\\bliss\\Documents\\R\\Capstone\\Medicare\\Test\\provider_sepDRG.csv")
+
+```
+
+
 # _____________________________________________________________________
 
-### 2. Merge National and State files with Provider  
+### 2. Clean National and State files   
   
 
 #### Medicare also provides 2011 National and State files.
  
 
-##### Load national data and repeat similar cleaning exercises as in provider file.
+##### Load national data and repeat similar cleaning exercises as in Provider file.
 
-```{r eval = FALSE}
+
+```{r eval = TRUE}
 National_Average_CMS <- read.csv("C:\\Users\\bliss\\Desktop\\Practice\\2011_National.csv")
 
 # Confirm structure was similar to provider file
@@ -195,9 +214,31 @@ National_Average_CMS$Nat_Avg_Total_Payments %>% range()
 National_Average_CMS$Nat_Avg_Medicare_Payments %>% range()
 
 ```
-##### Load state data and repeat similar cleaning exercises as in provider file.  
 
-```{r eval = FALSE}
+```{r eval = TRUE}
+
+# Check int and dbl columns for negative values (don't worry about zip codes)
+
+National_Average_CMS$Nat_Total_Discharges %>% range()
+National_Average_CMS$Nat_Avg_Covered_Charges %>% range()
+National_Average_CMS$Nat_Avg_Total_Payments %>% range()
+National_Average_CMS$Nat_Avg_Medicare_Payments %>% range()
+
+```
+
+
+```{r eval = TRUE}
+# Save a cleaned up version of the National file
+
+write_csv(x = National_Average_CMS, path =
+            "C:\\Users\\bliss\\Documents\\R\\Capstone\\Medicare\\Test\\National_Average_CMS.csv")
+
+```
+
+
+##### Load state data and repeat similar cleaning exercises as in Provider file.  
+
+```{r eval = TRUE}
 
 State_Average_CMS <- read.csv("C:\\Users\\bliss\\Desktop\\Practice\\2011_State.csv")
 
@@ -242,56 +283,66 @@ State_Average_CMS <- State_Average_CMS %>% rename("State_Total_Discharges" =
 
 View(State_Average_CMS)
 
+```
+
+```{r eval = TRUE}
+
 # Check int and dbl columns for negative values (don't worry about zip codes)
 
 State_Average_CMS$State_Total_Discharges %>% range()
 State_Average_CMS$State_Avg_Covered_Charges %>% range()
 State_Average_CMS$State_Avg_Total_Payments %>% range()
 State_Average_CMS$State_Avg_Medicare_Payments %>% range()
+
 ```
-##### Merge national and state file with provider file by the DRG number.
 
-```{r eval = FALSE}
+```{r eval = TRUE}
 
-# Merge national file
+# Save a cleaned up version of the State file
 
-provider_sepDRG_Nat_State <- left_join(x = provider_sepDRG, y = National_Average_CMS,
+write_csv(x = State_Average_CMS, path =
+            "C:\\Users\\bliss\\Documents\\R\\Capstone\\Medicare\\Test\\State_Average_CMS.csv")
+
+```
+
+### 3. Merge the National file with the Provider file by DRG number
+
+```{r eval = TRUE}
+
+# Merge National file 
+
+provider_sepDRG_Nat <- left_join(x = provider_sepDRG, y = National_Average_CMS,
                                        by = "DRG_Number")
 
-colnames(provider_sepDRG_Nat_State)
+# Remove duplicate column names related to DRG information
 
-# Remove repeat columns that are not needed
+colnames(provider_sepDRG_Nat)
 
-provider_sepDRG_Nat_State <- provider_sepDRG_Nat_State %>% 
-  select (-c(DRG.Definition, DRG_Definition.y, DRG_Definition.y))
+provider_sepDRG_Nat <- provider_sepDRG_Nat %>% select(-c(DRG.Definition, DRG_Definition.y))
 
-View(provider_sepDRG_Nat_State)
+View(provider_sepDRG_Nat)
 
-# Join State table and remove repeat columns.
+colnames(provider_sepDRG_Nat)
 
-provider_sepDRG_Nat_State <- left_join(x = provider_sepDRG_Nat_State, y = State_Average_CMS,
-                                       by = "DRG_Number")
+# double check to make sure there are 100 unique National DRG Covered charges in the merged file
 
-colnames(provider_sepDRG_Nat_State)
-
-provider_sepDRG_Nat_State <- provider_sepDRG_Nat_State %>% select(-c(State_Provider,
-                                                                     DRG_Definition,
-                                                                     DRG.Definition))
-
-colnames(provider_sepDRG_Nat_State)
-
-# Check to make sure there are 100 unique National DRG Covered Charges
-
-check <- data.frame(provider_sepDRG_Nat_State %>% group_by(DRG_Number) %>% 
+check <- data.frame(provider_sepDRG_Nat %>% group_by(DRG_Number) %>% 
                       summarise(National = n_distinct(Nat_Avg_Covered_Charges)))
 
 check # View in console
 
-# Check to make sure there are 51 unique State DRG Covered Charges (includes Washington DC)
 
-check_1 <- data.frame(original_sepDRG_Nat_State %>% group_by(DRG_Number) %>%
-  summarise(State = n_distinct(State_Avg_Covered_Charges)))
-
-check_1 # View in console
 ```
-##### Now we have a merged file called provider_sepDRG_Nat_State.
+
+```{r}
+# Save merged Provider_National file
+
+write_csv(x = provider_sepDRG_Nat, path =
+            "C:\\Users\\bliss\\Documents\\R\\Capstone\\Medicare\\Test\\provider_sepDRG_Nat.csv")
+```
+
+##### Now we have a saved, merged file called provider_sepDRG_Nat.
+
+### The End
+
+
