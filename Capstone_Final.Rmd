@@ -1,0 +1,1660 @@
+---
+title: "Final Medicare Capstone Report"
+output:
+  html_document: default
+  pdf_document: default
+---
+## *Background*
+
+#### The Centers for Medicare and Medicaid Services (CMS) have published information about inpatient hospital charges and associated reimbursements for Medicare beneficiaries since 2011.  The initiative was part of a broader effort by the Obama administration to unveil the secrecy behind health care costs.  Individual hospitals, known as Providers, are now required to report their Charges to the government.  The CMS then compiles the data into separate Provider and National files.
+
+#### Up until 2018, Charges only resided on the CMS website.  Starting in 2019, however, the CMS requires hospitals to post their Charges online at their respective facilities.  Before 2019, there was some public outrage over inexplicable, exorbitant charges at certain Providers for standardized treatments.  At the time, the American Hospital Association (AHA) explained that the Charges were just a starting point for private hospital-insurance negotiations; that is, the Charges did not reflect what consumers actually paid, even among those without insurance.  Because the Charges were not consumer relevant, the AHA argued that public disclosure would not necessarily achieve the goal of lowering health care costs.
+
+#### Reported Charges therefore constitute a mix of:
+* #### Runaway costs
+* #### Inflated, pre-negotiated costs
+* #### More reasonable, market-appropriate costs
+
+#### The AHA acknowledges that not addressing the extreme variability behind reported Charges distracts from the ability to reduce costs and improve consumer benefits.  Rather than issue more opposition statements to the new 2019 reporting mandate, the AHA commissioned this research to mine the data for insights.  
+
+## *Project Objective*
+
+#### Identify the worst "Overcharge" offenders to develop strategies for:
+
+* #### Exploring cost-saving opportunities
+
+* #### Improving consumer benefits
+
+```{r include = FALSE, message = FALSE}
+
+# Load necessary libraries 
+
+library(tidyverse)
+
+library(knitr)
+
+library(gridExtra)
+
+library(broom)
+
+# Create base file - this file has previously been cleaned and merged with the National file during the Data Wrangling file
+
+# Read in file
+
+test_drive <- read_csv('C:\\Users\\bliss\\Documents\\R\\Capstone\\Medicare\\Test\\provider_sepDRG_Nat.csv')
+
+# Add in % Reimbursement variable (Total Payments vs. Charges)
+# to compare Provider's Charges to how much they get back
+
+test_drive <- test_drive %>% 
+  mutate("Prov_Pct_Reimbursement" = round((Provider_Avg_Total_Payments / 
+                                               Provider_Avg_Covered_Charges)*100,0))
+
+# Index Provider charges against National and categorize "Type of Charge"
+# in order benchmark all Providers against the National Avg
+
+test_drive_benchmark <- test_drive %>% 
+  mutate("Prov_Charge/Nat_Charge" = round(Provider_Avg_Covered_Charges /
+                                                        Nat_Avg_Covered_Charges,2))
+test_drive_benchmark <- test_drive_benchmark %>% 
+  mutate("Type_of_Charge" = 
+           factor(c(case_when(`Prov_Charge/Nat_Charge` <= 0.8 ~ "Undercharge",
+                              `Prov_Charge/Nat_Charge` > 0.8 & `Prov_Charge/Nat_Charge` <= 1.2 ~
+                                "Market-Appropriate Charge", 
+                              `Prov_Charge/Nat_Charge` > 1.2 ~ "Overcharge")),
+                  levels = c("Undercharge", 
+                             "Market-Appropriate Charge", 
+                             "Overcharge")))
+
+# Add overall scaling by DRG to main file to normalize Charges 
+# Will make it easier to compare charges across facilities
+
+test_drive_benchmark <- test_drive_benchmark %>% 
+  group_by(DRG_Number) %>%
+  mutate("Scaled_Charge_DRG" = scale(Provider_Avg_Covered_Charges))
+
+# The next two steps are necessary in order to calculate State avg Charges
+# per DRG
+# 1. Add a new column for the total charges at one Provider for a DRG (#Discharges * Avg.Charge)
+
+test_drive_benchmark <- test_drive_benchmark %>%
+  mutate("Total_Provider_Charge_DRG" = Provider_Total_Discharges * 
+           Provider_Avg_Covered_Charges)
+
+# 2. Add a new column for the total Payments at one Provider for a DRG (#Discharges * Avg.Payment)
+
+test_drive_benchmark <- test_drive_benchmark %>%
+  mutate("Total_Provider_Payment_DRG" = 
+         Provider_Total_Discharges*Provider_Avg_Total_Payments)
+
+```
+
+## *Analysis*
+
+#### The analysis was conducted on the 2011 data set.
+
+### **1) National-State Patterns**
+
+#### Charges were grouped into categories for initial screening.
+
+#### Each Provider's DRG charge was indexed against the National:
+
+* #### Provider DRG Charge Index = Avg. Provider Charge / National Avg. Charge
+
+#### The Provider Charge Index was then categorized into these "Types of Charge":
+
+* #### Undercharge < 0.8
+* #### <= 0.8 Market-Appropriate Charge < 1.2
+* #### Overcharge >= 1.2
+
+#### For example, the chart below shows the distribution of "Types of Charge" for DRG 897, one of the 100 unique DRGs in the 2011 data set.
+
+```{r include = FALSE}
+
+# Create example to show type of charge distribution for a particular DRG
+# The goal is just to illustrate the huge amount of variability
+
+charge_distribution_DRG_897 <- test_drive_benchmark %>%
+  filter(DRG_Number == '897') %>%
+  ggplot(aes(x = Provider_Avg_Covered_Charges, fill = Type_of_Charge)) +
+           geom_histogram() +
+  labs(title = "Types of Charges for DRG 897 (Illustration Purposes Only)",
+       subtitle = "ALCOHOL/DRUG ABUSE OR DEPENDENCE W/O REHABILITATION THERAPY W/O MCC",
+       x = "Avg Provider Charge (All States)") +
+  annotate(geom = "text", x = 40000, y = 100, 
+           label = str_wrap("All Charges Benchmarked vs. National Avg", width = 15))
+
+```
+
+```{r echo = FALSE, message = FALSE}
+
+# Plot graph showing Type of Charges for DRG 897
+
+charge_distribution_DRG_897
+
+```
+
+#### The "Types of Charges" were analyzed across the States.  The tables below shows the three (3) States with the most Overcharges contrasted against those with the most Undercharges.
+
+```{r include = FALSE, message = FALSE}
+
+# Create table to analyze % Overcharges by State - filter to top 3
+# The goal is to see which States have the most Overcharge vs. Undercharge
+# The States at the opposite end of the spectrum will serve as a basis 
+# for a pilot analysis
+
+# 1. Overcharges
+
+top_3_States_Overcharges <- test_drive_benchmark %>% 
+  group_by(Provider_State, Type_of_Charge) %>%
+  summarise("Quantity" = n()) %>%
+  group_by(Provider_State) %>%
+  mutate("Total_No_Charges" = sum(Quantity)) %>%
+  mutate("Pct_vs_All_Charges" = round((Quantity/Total_No_Charges)*100,1)) %>%
+  filter(Type_of_Charge == "Overcharge") %>%
+  arrange(desc(Pct_vs_All_Charges)) %>%
+  select(Provider_State, Type_of_Charge, Pct_vs_All_Charges) 
+
+# 2. Undercharges
+
+# Create table to analyze % Undercharges by State - filter to 3 States with most Undercharges
+
+top_3_States_Undercharges <-  test_drive_benchmark %>% 
+  group_by(Provider_State, Type_of_Charge) %>%
+  summarise("Quantity" = n()) %>%
+  group_by(Provider_State) %>%
+  mutate("Total_No_Charges" = sum(Quantity)) %>%
+  mutate("Pct_vs_All_Charges" = round((Quantity/Total_No_Charges)*100,1)) %>%
+  filter(Type_of_Charge == "Undercharge") %>%
+  arrange(desc(Pct_vs_All_Charges)) %>%
+  select(Provider_State, Type_of_Charge, Pct_vs_All_Charges)
+
+```
+
+```{r echo = FALSE, message = FALSE}
+
+kable(top_3_States_Overcharges[1:3, ], caption = "Big 3 State Overchargers")
+
+kable(top_3_States_Undercharges[1:3, ], caption = "Big 3 State Underchargers")
+
+```
+
+#### Surprisingly, States in similar geographical regions can have very different "Types of Charges".  For instance, Providers in Maryland (MD) mostly undercharge while Providers in neighboring New Jersey (NJ) mostly overcharge.  NJ and MD were further investigated in order to develop an approach for a broader National analysis.
+
+#### The Average State Charges per DRG were calculated by dividing the sum of the State's Charges by the total number of Discharges for that DRG.  The Average State Provider Total Payments (finalized reimbursements) per DRG were calculated in a similar manner using the State's Total Payments. 
+
+#### Each graph below contains data for all 100 DRGs.  The lines connect the same DRG between MD and NJ.  The graph on the left shows that NJ always charges more than MD (range = $24,350 - 179,426).  The graph on the right, however, shows that MD always receives more in absolute Total Payments per DRG (range = $309 - 9371).  Clearly, charging more for treatment does not necessarily guarantee better returns.    
+
+```{r include = FALSE, message = FALSE}
+
+# The following code compares Charges & Payments between NJ and MD across
+# all DRGs - ultimately, paired line graphs will summarize the findings
+
+# 1. Find the State Avg Charge per DRG
+# 2. Find the Charge differences between the States per DRG
+# 3. Find the State Avg. Payment per DRG
+# 4. Find the Payment differences between the States per DRG
+# 5. Plot the Charges vs. Payments by State per DRG
+
+# Subset base file to isolate MD and NJ
+
+Just_MD_NJ <- test_drive_benchmark %>% 
+  filter(Provider_State == 'MD' | Provider_State == 'NJ')
+
+# Create new df to sum up DRG charges and Discharges by State so State Avg can be calculated
+
+Just_MD_NJ_Charges <- Just_MD_NJ %>% 
+  group_by(DRG_Number, Provider_State) %>%
+  summarise("Total_State_Charges_DRG" = sum(Total_Provider_Charge_DRG),
+                                            "Total_State_Discharge_DRG" =
+                                              sum(Provider_Total_Discharges))
+
+# Compute the average charge per DRG per State
+
+Just_MD_NJ_Charges <- Just_MD_NJ_Charges %>%
+  mutate("Avg_State_Charge_Per_DRG" = Total_State_Charges_DRG/Total_State_Discharge_DRG)
+
+# Examine the distributions
+
+Just_MD_NJ_Charges %>% ggplot(aes(x = reorder(DRG_Number, desc(Avg_State_Charge_Per_DRG)),
+                                  y = Avg_State_Charge_Per_DRG)) +
+   geom_col() +
+  facet_grid(rows = vars(Provider_State)) 
+
+# Find differences at each DRG - first approach used in Milestone report
+
+Just_MD_NJ_Charges <- Just_MD_NJ_Charges %>%
+  mutate("Shift_NJ" = lead(Avg_State_Charge_Per_DRG))
+
+Just_MD_NJ_Charges <- Just_MD_NJ_Charges %>%
+  mutate("NJ_MD_Diff" = Shift_NJ - Avg_State_Charge_Per_DRG)
+
+range(Just_MD_NJ_Charges$NJ_MD_Diff, na.rm = TRUE)
+
+# $24,350 was the minimum charge difference
+
+min(Just_MD_NJ_Charges$NJ_MD_Diff, na.rm = TRUE)
+
+# All NJ average charges are higher than MD
+
+Just_MD_NJ_Charges %>% filter(NJ_MD_Diff <= 0)
+
+# Create a NJ and MD State summary of absolute payments
+
+Just_MD_NJ_Payments <- Just_MD_NJ %>%
+  group_by(DRG_Number, Provider_State) %>%
+  summarise("Total_State_Payments_DRG" = sum(Total_Provider_Payment_DRG),
+            "Total_State_Discharge_DRG" =
+              sum(Provider_Total_Discharges))
+
+# Find the ave State payment per DRG
+
+Just_MD_NJ_Payments <- Just_MD_NJ_Payments %>%
+  mutate("Avg_State_Payment_Per_DRG" = 
+           Total_State_Payments_DRG/Total_State_Discharge_DRG)
+
+# Subtract to find Payment difference using MD-NJ since MD is higher
+
+Just_MD_NJ_Payments <- Just_MD_NJ_Payments %>%
+  mutate("Lead_NJ" = lead(Avg_State_Payment_Per_DRG)) %>%
+  mutate("Payment_Diff_MD_NJ" = Avg_State_Payment_Per_DRG-Lead_NJ)
+
+# MD gets more Payment than NJ for each DRG
+
+Just_MD_NJ_Payments %>% filter(Payment_Diff_MD_NJ <= 0)
+
+min(Just_MD_NJ_Payments$Payment_Diff_MD_NJ, na.rm = TRUE)
+
+range(Just_MD_NJ_Payments$Payment_Diff_MD_NJ, na.rm = TRUE)
+
+# Visualize charge and payment differences in a pair line plot
+
+# First merge charges and payments
+
+line_plot_charge <- Just_MD_NJ_Charges %>% 
+  select(DRG_Number, Provider_State, Avg_State_Charge_Per_DRG)
+
+line_plot_charge <- line_plot_charge %>%
+  mutate("Dollar_Type" = if_else(!is.na(Avg_State_Charge_Per_DRG),
+                                 "Avg_State_Charge", " "))
+
+line_plot_charge <- line_plot_charge %>% 
+  rename("Dollars" = Avg_State_Charge_Per_DRG)
+
+line_plot_payment <- Just_MD_NJ_Payments %>% 
+  select(DRG_Number, Provider_State, Avg_State_Payment_Per_DRG)
+
+line_plot_payment <- line_plot_payment %>%
+  mutate("Dollar_Type" = if_else(!is.na(Avg_State_Payment_Per_DRG),
+                                 "Avg_State_Payment", " "))
+
+line_plot_payment <- line_plot_payment %>% 
+  rename("Dollars" = Avg_State_Payment_Per_DRG)
+
+merge_charge_payment <- bind_rows(line_plot_payment, line_plot_charge)
+
+# Create pair plot to show Charges next to Payments for MD-NJ across the 100 DRGs
+
+NJ_MD_pair_plot <- merge_charge_payment %>% 
+  ggplot(aes(x = Provider_State, 
+             y = Dollars, group = DRG_Number, 
+             color = factor(DRG_Number))) +
+  geom_point() +
+  geom_line() +
+  theme(legend.position = "none") +
+  facet_grid(cols = vars(Dollar_Type)) +
+  labs(title = "MD & NJ State Charges and Payments per DRG",
+       subtitle = "NJ Always Charges More but Gets Less Back")
+```
+
+```{r echo = FALSE, message = FALSE}
+
+NJ_MD_pair_plot
+
+```
+
+#### Reimbursement rates were calculated by dividing the State Avg. Total Payments by the State Avg. Charges per DRG.  Reimbursement rates in MD average around 94% and show very little variability while NJ demonstrates more variable reimbursement rates, averaging only around 16%.
+
+```{r include = FALSE, message = FALSE}
+
+# Determine % Avg. Payment and st.dev. received per Charge in order to 
+# Create a table
+# First concatenate a unique string between DRG and State in order to merge Charge and Payment tables
+
+Pct_Reimbursement_Charge <- Just_MD_NJ_Charges %>%
+  select(DRG_Number, Provider_State, Avg_State_Charge_Per_DRG) %>%
+  mutate("DRG_State" = paste0(DRG_Number, "_", Provider_State))
+
+Pct_Reimbursement_Payment <- Just_MD_NJ_Payments %>%
+  select(DRG_Number, Provider_State, Avg_State_Payment_Per_DRG) %>%
+  mutate("DRG_State" = paste0(DRG_Number, "_", Provider_State))
+
+merge_Reimbursement <- left_join(Pct_Reimbursement_Charge, Pct_Reimbursement_Payment,
+                                 by = "DRG_State") %>%
+  select(-DRG_Number.y, - Provider_State.y)
+
+merge_Reimbursement <- merge_Reimbursement %>% 
+  mutate("Pct_Reimbursement" = 
+           round((Avg_State_Payment_Per_DRG/Avg_State_Charge_Per_DRG)*100,1)) %>%
+  rename("Provider_State" = Provider_State.x)
+
+summary_reimbursement <- merge_Reimbursement %>% group_by(Provider_State) %>%
+  summarise("Avg_Pct_Reimbursement" = 
+              round(mean(Pct_Reimbursement),1),
+                   "St.Dev" = round(sd(Pct_Reimbursement),1)) %>% data.frame()
+
+```
+
+```{r echo = FALSE, message = FALSE}
+
+summary_reimbursement %>% kable(caption = "Percent Reimbursement")
+
+```
+
+#### Interestingly, MD charges less for 96 out of the 100 DRGs across all States and the District of Columbia.  Only Montana (MT), Idaho (ID), and West Virginia (WV) have a few DRGs with lower charges than MD.
+
+```{r include = FALSE}
+
+# Expand beyond NJ-MD analysis to find which States have the lowest Avg. Charge per DRG
+
+# Find the average charge / DRG by State
+
+Just_State_Charges <- test_drive_benchmark %>% 
+  group_by(DRG_Number, Provider_State) %>%
+  summarise("Total_State_Charges_DRG" = sum(Total_Provider_Charge_DRG),
+            "Total_State_Discharge_DRG" =
+              sum(Provider_Total_Discharges)) %>%
+  mutate("Avg_State_Charge_Per_DRG" = Total_State_Charges_DRG/Total_State_Discharge_DRG)
+
+# Find which States have the lowest DRG charge 
+
+# MD has the lowest State Avg Charge for 96 our of the 100 DRGs.
+
+Just_State_Charges %>% group_by(DRG_Number) %>%
+  arrange(Avg_State_Charge_Per_DRG) %>% 
+  top_n(-1,Avg_State_Charge_Per_DRG) %>% 
+  group_by(Provider_State) %>%
+  summarise("Number_DRGs_Lowest_Avg_State_Charge" = n()) %>%
+  arrange(desc(Number_DRGs_Lowest_Avg_State_Charge))
+
+# Pull out the non-MD states that have lower DRG charges than MD (along with DRG) to highlight
+# the uniqueness of MD
+
+NonMD_lowest_States <- Just_State_Charges %>% 
+  arrange(DRG_Number, Avg_State_Charge_Per_DRG) %>% 
+  top_n(-1,Avg_State_Charge_Per_DRG) %>%
+  select(Provider_State, DRG_Number) %>% filter(Provider_State != 'MD') %>%
+  data.frame()
+
+```
+
+```{r echo = FALSE, message = FALSE}
+
+NonMD_lowest_States %>% kable(caption = "Exceptions: States with Avg Lower DRG Charges than MD")
+
+```
+
+#### Thus, the unique status of MD having the lowest charges for almost all the DRGs makes it a compelling benchmark for the rest of the country.
+
+### **2) Provider Patterns**
+
+#### <u>**Provider Charge Variability**</u>
+
+#### MD and NJ also served as instructive case studies for examining Provider patterns.  As seen above, NJ average State costs per DRG are always higher than MD.  An analysis at the individual Provider level, however, revealed that sometimes Charges between the States overlapped.
+
+#### NJ has more Providers than MD.
+
+```{r include = FALSE}
+
+# The code below shows that MD and NJ treat all 100 DRGs (there are 200 rows)
+
+Just_MD_NJ %>% group_by(DRG_Number, Provider_State) %>%
+  summarise("Number_Providers_Treating_DRG" = n())
+
+# Find number of Providers per State
+
+Just_MD_NJ_Provider <- Just_MD_NJ %>% 
+  group_by(Provider_State, Provider_ID) %>%
+  summarise("Distinct_Providers" = n_distinct(Provider_ID)) %>%
+  group_by(Provider_State) %>%
+  summarise("Number_Providers" = sum(Distinct_Providers))
+
+```
+
+```{r echo = FALSE, message = FALSE}
+
+Just_MD_NJ_Provider %>% kable(caption = "Number of Providers in Each State")
+
+```
+
+#### Twenty-two (22) out of 100 DRGs had some overlapping Provider Charges between NJ and MD.  The graphs below show an example of when no Provider Charges overlapped vs. when some Provider Charges overlapped (DRGs 246 and 280, respectively).  Overlaps were identified by comparing the maximum MD Charge to the minimum NJ Charge for each DRG.
+
+```{r include = FALSE, message = FALSE}
+
+# Even though MD State averages are always higher, the next series of code
+# will explore if any of the Provider charges overlapped for a particular DRG
+# by identifying Max MD Charge and the
+# Min NJ Charge for each DRG.  If the Min NJ < Max MD, then there is some charge
+# overlap for that particular DRG.  But if Min NJ > Max MD, then there is no
+# overlap and these DRGs can be screened out.
+# The purpose of this exercise is to explore Provider charge variability
+# in a State that tends to have pretty uniform charges
+
+Just_MD_NJ_Max_Min <- Just_MD_NJ %>% group_by(DRG_Number, Provider_State) %>%
+  summarise("Max_Charge" = max(Provider_Avg_Covered_Charges), 
+            "Min_Charge" = min(Provider_Avg_Covered_Charges))
+
+# need to shift up the NJ Min to directly compare MD Max to NJ Min
+# If NJ min is less than MD max, then the charges overlap - label as TRUE
+
+Just_MD_NJ_Max_Min <- Just_MD_NJ_Max_Min %>%
+  mutate("Shift_NJ_Min" = lead(Min_Charge)) %>%
+  mutate("DRG_Charge_Overlap" = if_else(Shift_NJ_Min < Max_Charge, TRUE, FALSE))
+
+# Create a list of DRG charges that overlap and track down the Providers associated with them
+# 22 of the 100 DRGs have overlapping charges between MD and NJ
+
+Overlaps <- Just_MD_NJ_Max_Min %>% group_by(DRG_Number, DRG_Charge_Overlap) %>%
+  filter(!is.na(DRG_Charge_Overlap) & DRG_Charge_Overlap == TRUE) %>%
+  select(DRG_Number, DRG_Charge_Overlap) %>%
+  data.frame()
+
+Overlaps
+
+# Identify which DRGs are associated with overlapping charges in base df
+# in order to track down Providers
+
+Just_MD_NJ <- Just_MD_NJ %>% mutate("DRG_Associated_with_Charge_Overlap" = 
+                                      if_else(DRG_Number == "039" | DRG_Number == "057" | 
+                                                DRG_Number == "064" | DRG_Number == "189"|
+                                                DRG_Number == "202" | DRG_Number == "280"|
+                                                DRG_Number == "281" | DRG_Number == "291"| 
+                                                DRG_Number == "303" | DRG_Number == "329" | 
+                                                DRG_Number == "378" | DRG_Number == "394" |
+                                                DRG_Number == "460" | DRG_Number == "682" |
+                                                DRG_Number == "698" | DRG_Number == "699"|
+                                                DRG_Number == "812" | DRG_Number == "853" |
+                                                DRG_Number == "871" | DRG_Number == "872" |
+                                                DRG_Number == "885" | DRG_Number == '897', TRUE, FALSE))
+
+# Show an example of DRGs with non-overlapping charges vs. overlapping charges
+# DRG 246 shows an example of non-overlapping charges and DRG shows an example of overlapping 
+# charges
+
+no_overlap <- Just_MD_NJ %>% filter(DRG_Number == '246') %>% 
+  ggplot(aes(x = Provider_Avg_Covered_Charges)) +
+  geom_histogram() +
+  facet_grid(rows = vars(Provider_State)) +
+  labs(title = "No Charge Overlap: DRG 246") +
+  annotate(geom = "rect", xmin=57000, xmax=80000, 
+           ymin=0 , ymax=5, alpha=0.2, color="blue", fill="blue")
+
+no_overlap
+
+some_overlap <- Just_MD_NJ %>% filter(DRG_Number == '280') %>% 
+  ggplot(aes(x = Provider_Avg_Covered_Charges)) +
+  geom_histogram() +
+  facet_grid(rows = vars(Provider_State)) +
+  labs(title = "Some Charge Overlap: DRG 280") +
+  annotate(geom = "rect", xmin=24000, xmax=45000, 
+           ymin=0 , ymax=18, alpha=0.2, color="green", fill="green")
+
+some_overlap
+
+```
+
+```{r echo = FALSE, message = FALSE}
+
+grid.arrange(no_overlap, some_overlap, ncol = 2)
+
+```
+
+#### Very few charges crossed State lines among the 22 DRGs mentioned above.  Only thirty-two (32) of MD's 3330 reported Provider Charges overlapped with NJ, and only seventy (70) of NJ's 4826 Charges overlapped with MD.  The table below shows that six (6) MD Providers had Charges that overlapped with NJ Charges and twenty-nine (29) NJ Providers overlapped with MD.
+
+```{r include = FALSE, message = FALSE}
+
+# Now Identify Providers with overlapping charges - first filter out the DRGs that
+# don't have overlapping charges by selecting just the DRGs associated with charge overlaps
+
+Provider_Overlap <- Just_MD_NJ %>% 
+  filter(DRG_Associated_with_Charge_Overlap) %>%
+  group_by(DRG_Number) %>%
+  select(DRG_Number, Provider_ID, Provider_Name, Provider_State,
+         Provider_Avg_Covered_Charges, DRG_Associated_with_Charge_Overlap)
+
+# Add NJ DRG charge mins and MD DRG charge maxs
+# First create a NJ min df and then a MD max df
+
+Just_NJ_Min <- Just_MD_NJ_Max_Min %>%
+  filter(Provider_State == 'NJ') %>%
+  select(DRG_Number, Provider_State, Min_Charge) %>%
+  rename("NJ_Min" = Min_Charge)
+
+Just_MD_Max <- Just_MD_NJ_Max_Min %>%
+  filter(Provider_State == 'MD') %>%
+  select(DRG_Number, Provider_State, Max_Charge) %>%
+  rename("MD_Max" = Max_Charge)
+
+# Merge Provider_Overlap with the NJ Min and MD Max
+
+Provider_Overlap <- Provider_Overlap %>%
+  left_join(select(Just_NJ_Min, NJ_Min), by = "DRG_Number")
+
+Provider_Overlap <- Provider_Overlap %>%
+  left_join(select(Just_MD_Max, MD_Max), by = "DRG_Number")
+
+# Now identify which Providers have overlapping charges between the states
+# If a MD Provider Avg Covered Charge > NJ Min, then TRUE
+# If a NJ Provider Avg Covered Charge < MD Max, then TRUE
+
+Provider_Overlap <- Provider_Overlap %>%
+  mutate("Provider_State_Overlap" = 
+           case_when(Provider_State == 'MD' & 
+                       Provider_Avg_Covered_Charges > NJ_Min ~ TRUE,
+                     Provider_State == 'MD' &
+                       Provider_Avg_Covered_Charges < NJ_Min ~ FALSE,
+                     Provider_State == 'NJ' &
+                       Provider_Avg_Covered_Charges < MD_Max ~ TRUE,
+                     Provider_State == 'NJ' &
+                       Provider_Avg_Covered_Charges > MD_Max ~ FALSE))
+
+Provider_Overlap %>% filter(Provider_State_Overlap == TRUE) %>%
+  group_by(Provider_Name, Provider_State) %>%
+  summarise("Number_Overlapping_Charges" = n()) %>% 
+  arrange(Provider_State, desc(Number_Overlapping_Charges)) %>% data.frame()
+
+Just_TRUE_Provider_Overlap <- Provider_Overlap %>%
+  filter(Provider_State_Overlap == TRUE) %>%
+  group_by(Provider_ID, Provider_Name, Provider_State) %>%
+  summarise("Number_Overlapping_Charges" = n()) %>% 
+  arrange(Provider_State, desc(Number_Overlapping_Charges)) %>% data.frame()
+
+Just_TRUE_Provider_Overlap <- Just_TRUE_Provider_Overlap %>% 
+  group_by(Provider_State) %>%
+  mutate("Total_Overlap_Charges_by_State" = 
+           sum(Number_Overlapping_Charges))
+
+Just_TRUE_Provider_Overlap <- Just_TRUE_Provider_Overlap %>%
+  mutate("Pct_Overlap_by_Provider_within_State" = 
+           round((Number_Overlapping_Charges/Total_Overlap_Charges_by_State)*100,1))
+
+# Determine the total number of Provider reported charges by state in order to benchmark against the number of overlaps
+
+Just_MD_NJ %>% group_by(Provider_State) %>%
+  summarise("Total_Number_Listed_Charges" = n())
+
+# So only 32 of the MD listed charges overlapped with NJ out of 3330 and
+# only 70 of the NJ listed charges overlapped with MD out of 4826
+
+Provider_Overlap_summary <- Just_TRUE_Provider_Overlap %>%
+  group_by(Provider_State, Total_Overlap_Charges_by_State) %>%
+  rename("Total_Overlapping_Charges" = Total_Overlap_Charges_by_State) %>%
+  summarise("Number_of_Providers_Associated_with_Overlap" = n())
+
+```
+
+```{r echo = FALSE, message = FALSE}
+
+Provider_Overlap_summary %>% kable(caption = "Summary of Overlapping Charges")
+
+```
+
+#### The analysis below explores which specific Providers overlapped with their State neighbor.  As previously mentioned, most of MD Charges were Undercharges while most of NJ Charges were Overcharges, as illustrated with DRG 149.
+
+```{r include = FALSE, message = FALSE}
+
+# The graph below shows the typical "Types of Charges" for MD vs. NJ using DRG 149
+# The main point to illustrate is that most of MD charges are "Undercharges" and most of NJ are "Overcharges"
+
+typical_providers <- Just_MD_NJ %>% 
+  filter(DRG_Number == '149') %>%
+  ggplot(aes(x = Provider_Avg_Covered_Charges, fill = Type_of_Charge)) +
+  geom_histogram() + labs(title = "Typical 'Types of Charges' by State",
+                          subtitle = "Example: DRG 149 DYSEQUILIBRIUM", x = "Provider_Avg_Covered_Charges") +
+  facet_grid(rows = vars(factor(Provider_State))) +
+  theme(panel.grid = element_blank())
+
+```
+
+```{r echo = FALSE, message = FALSE}
+
+typical_providers
+
+```
+
+#### When Charges overlap, there are most likely to occur at three (3) Providers.  Johns Hopkins Hospital was responsible for most of MD's overlapping Charges (53%).  NJ overlapping Charges concentrate at Cape Regional Medical Center and Hunterdon Medical Center (39%).  Upon examination of their "Types of Charges", it is not surprising to see why these Providers contain Charge overlaps.  The "Types of Charge" patterns at these three Providers differ substantially from their State counterparts, as represented above with DRG 149. Johns Hopkins diverges from the usual MD pattern in that it has a smattering of Market-Appropriate Charges and Overcharges.  Cape and Hunterdon differ from the majority of NJ Providers with very few Overcharges.   
+
+```{r include = FALSE, message = FALSE}
+
+# The table below shows that 53% of MD's overlapping charges come from JOHNS HOPKINS HOSPITAL and 39% of NJ's overlapping charges come from CAPE REGIONAL MEDICAL CENTER INC (24.3%)  & HUNTERDON MEDICAL CENTER (14.3%)
+# 
+Just_TRUE_Provider_Overlap
+
+Johns_Cape_Hunter_p <- Just_MD_NJ %>% filter(Provider_ID == '210009' | Provider_ID == '310011' |
+                                        Provider_ID == '310005') %>%
+  ggplot(aes(x = Provider_Avg_Covered_Charges, fill = Type_of_Charge)) +
+  geom_histogram() + labs(title = "Providers Most Likely to Have Overlapping State Charges",
+                          subtitle = "MD Johns Hopkins (09), NJ Cape (11) & NJ Hunterdon (05)", 
+                          x = "Provider_Avg_Covered_Charges") +
+  facet_grid(rows = vars(factor(Provider_ID, levels = c('210009', '310011', '310005')))) +
+  
+  theme(panel.grid = element_blank())
+
+```
+
+```{r echo = FALSE, message = FALSE}
+
+Johns_Cape_Hunter_p
+
+```
+
+#### In summary, even when there is a high degree of State uniformity, Charges at individual Providers can vary substantially within the State.
+
+#### <u>**Provider DRG Variability vs Charges**</u>
+
+#### Charges at MD Johns Hopkins, NJ Cape, and NJ Hunterdon were compared to other Providers that treated the same DRGs in order to determine if a narrow mix of DRGs at these three Providers skewed costs.  For reference, Johns Hopkins treats 94 DRGs, Cape treats 78 DRGs, and Hunterdon treats 66 DRGs, as highlighted in the graphs below.
+
+```{r include = FALSE, message = FALSE}
+
+# Johns/Cape/Hunter show different Charge patterns than their respsective
+# states.  Therefore, Examine the number of DRGs treated at Johns/Cape/Hunter to see if that's what makes them unique.  In other words, do they treat a small, skewed number of DRGs?
+
+# Change Provider ID from a number to a factor for analysis
+
+test_drive_benchmark$Provider_ID <- as.factor(test_drive_benchmark$Provider_ID)
+
+# Create MD df
+
+MD_Providers <- test_drive_benchmark %>% filter(Provider_State == 'MD') %>%
+  group_by(Provider_ID, DRG_Number) %>%
+  select(Provider_ID, DRG_Number, Provider_Name, Provider_State,
+         Provider_Total_Discharges, Provider_Avg_Covered_Charges,
+         Type_of_Charge)
+
+# Create a summary of MD Providers and the number of DRGs they treat
+
+MD_Providers_DRGs <- MD_Providers %>% group_by(Provider_ID, Provider_Name) %>%
+  summarise("Number_DRGs_Treated" = n()) %>% arrange(desc(Number_DRGs_Treated)) %>%
+  data.frame() 
+
+# Add variable to identify Johns Hopkins in chart
+# Johns treats 94 DRGs
+
+MD_Providers_DRGs <- MD_Providers_DRGs %>%
+  mutate("Johns_Hopkins_210009" = if_else(Provider_ID == '210009', "Yes", "No"))
+
+p_MD_DRGs <- MD_Providers_DRGs %>%
+  ggplot(aes(x = reorder(Provider_ID, desc(Number_DRGs_Treated)), 
+             y = Number_DRGs_Treated)) +
+  geom_col(aes(fill = factor(Johns_Hopkins_210009))) +
+  theme(axis.text.x = element_blank(), panel.grid = element_blank(), legend.position = "none") +
+  labs(title = "Number DRGs vs MD Providers", x = "MD Providers (Johns Hopkins Highlighted)")
+
+p_MD_DRGs
+
+# Repeat process for NJ, making sure to highlight Cape and Hunterdon
+
+NJ_Providers <- test_drive_benchmark %>% filter(Provider_State == 'NJ') %>%
+  group_by(Provider_ID, DRG_Number) %>%
+  select(Provider_ID, DRG_Number, Provider_Name, Provider_State,
+         Provider_Total_Discharges, Provider_Avg_Covered_Charges,
+         Type_of_Charge)
+
+# Determine how many DRGs Cape and Hunterdon treat
+# Cape treats 78 DRGS and Hunterdon treats 66
+
+NJ_Providers_DRGs <- NJ_Providers %>% group_by(Provider_ID, Provider_Name) %>%
+  summarise("Number_DRGs_Treated" = n()) %>% arrange(desc(Number_DRGs_Treated)) %>%
+  data.frame() 
+
+# Add variable to identify Cape and Hunterdon in chart
+
+NJ_Providers_DRGs <- NJ_Providers_DRGs %>%
+  mutate("Cape_or_Hunterdon" = if_else(Provider_ID == '310011' | 
+                                         Provider_ID == '310005', "Yes", "No"))
+
+
+p_NJ_DRGs <- NJ_Providers_DRGs %>%
+  ggplot(aes(x = reorder(Provider_ID, desc(Number_DRGs_Treated)), 
+             y = Number_DRGs_Treated)) +
+  geom_col(aes(fill = factor(Cape_or_Hunterdon))) +
+  theme(axis.text.x = element_blank(), panel.grid = element_blank(), legend.position = "none") +
+  labs(title = "Number DRGs vs NJ Providers", x = "NJ Providers (Cape & Hunterdon Highlighted)")
+
+p_NJ_DRGs
+
+```
+
+```{r echo = FALSE, message = FALSE}
+
+grid.arrange(p_MD_DRGs, p_NJ_DRGs)
+
+```
+
+#### Johns Hopkins Charges were compared to other Providers that treated the same DRGs.  The graph below shows that most of Johns' Charges trended higher than those at other Providers.  In fact, Johns Hopkins charges the most for 58 DRGs in MD.
+
+```{r include = FALSE, message = FALSE}
+# Compare Johns to Providers that treat the same DRGs to see assess the consistency of Johns Charge patterns
+
+# Add DRG cost scaling to normalize Charges within MD.  
+
+MD_Providers <- MD_Providers %>% group_by(DRG_Number) %>%
+  mutate("Scale_by_DRG_Charge" = scale(Provider_Avg_Covered_Charges))
+
+# Rank Providers by how many of their DRGs are most expensive in the state
+# Johns Hopkins charges the most for 58 DRGs
+
+rank_MD_Providers <- MD_Providers %>% group_by(DRG_Number) %>%
+  select(DRG_Number, Provider_ID, Provider_Name, Provider_Avg_Covered_Charges) %>%
+  arrange(DRG_Number, desc(Provider_Avg_Covered_Charges)) %>%
+  top_n(1, Provider_Avg_Covered_Charges) %>%
+  group_by(Provider_ID, Provider_Name) %>% summarise("Number_DRGs_Most_Costly" = n()) %>%
+  arrange(desc(Number_DRGs_Most_Costly))
+
+rank_MD_Providers
+
+# Match MD Providers that treat the same DRGs as Johns
+
+# Create a reference Johns DRG list
+
+Johns_DRGs <- MD_Providers %>% filter(Provider_ID == '210009') %>%
+  select(Provider_ID, Provider_Name, DRG_Number)
+
+# Create a subset df to isolate DRGs to just those treated at Johns
+
+MD_DRG_subset <- MD_Providers %>% select(DRG_Number, Provider_ID, Provider_Name,
+                                         Scale_by_DRG_Charge) %>%
+  mutate("DRG_at_Johns" = if_else(DRG_Number %in% Johns_DRGs$DRG_Number, 
+                                  "Yes", "No"))
+
+# Check to make sure 94 DRGs are treated at Johns
+
+MD_DRG_subset %>% group_by(DRG_Number, DRG_at_Johns) %>% 
+  filter(DRG_at_Johns == "Yes") %>% summarise(n()) 
+
+# Add vector to identify Johns Hopkins from other Providers
+
+MD_DRG_subset <- MD_DRG_subset %>% 
+  mutate("Johns_Hopkins" = if_else(Provider_ID == '210009', "Johns", "Not_Johns"))
+
+# Plot just the Provider Charges for DRGs that are only treated at Johns
+
+p_MD_DRG_subset <- MD_DRG_subset %>% filter(DRG_at_Johns == "Yes") %>%
+  ggplot(aes(x=DRG_Number, y = Scale_by_DRG_Charge, color = Johns_Hopkins)) +
+  geom_point(size = 3, alpha = 0.5) + scale_color_hue(direction = -11) +
+  theme(axis.text.x = element_blank(), panel.grid = element_blank(), legend.position = "none") +
+  labs(title = "Charges for 94 Johns Hopkins DRGs", 
+       x = "DRG Number",
+       y = "State Normalized DRG Charge",
+       subtitle = "Johns Hopkins Highlighted")
+
+```
+
+```{r echo = FALSE, message = FALSE}
+
+p_MD_DRG_subset
+
+```
+
+#### Cape has 60 of the least costly DRGs and Hunterdon has 15 of the least costly in NJ.  As with MD, NJ charges were normalized per DRG within the State prior to analysis.  The plots below, which compare Cape and Hunterdon Charges with Providers that treat the same DRGs, show that Cape and Hunterdon Charges trend lower than their counterparts across the DRGs.  
+
+```{r include = FALSE, message = FALSE}
+# Repeat process for Cape and Hunter to see if their DRG mix might explain why they have lower charges than most NJ Providers - only look at Charges treated at these facilities
+
+# Cape has 60 of the least costly DRGs and Hunterdon has 15
+
+rank_NJ_Providers <- NJ_Providers %>% group_by(DRG_Number) %>%
+  select(DRG_Number, Provider_ID, Provider_Name, Provider_Avg_Covered_Charges) %>%
+  arrange(DRG_Number, Provider_Avg_Covered_Charges) %>% 
+  top_n(-1, Provider_Avg_Covered_Charges) %>%
+  group_by(Provider_ID, Provider_Name) %>% summarise("Number_DRGs_Least_Costly" = n()) %>%
+  arrange(desc(Number_DRGs_Least_Costly))
+
+rank_NJ_Providers
+
+# Add DRG cost scaling to normalize Charges within NJ.  
+
+NJ_Providers <- NJ_Providers %>% group_by(DRG_Number) %>%
+  mutate("Scale_by_DRG_Charge" = scale(Provider_Avg_Covered_Charges))
+
+# Create DRG reference for Cape
+
+Cape_DRGs <- NJ_Providers %>% filter(Provider_ID == '310011') %>%
+  select(Provider_ID, Provider_Name, DRG_Number)
+
+NJ_Cape_Subset <- NJ_Providers %>% select(DRG_Number, Provider_ID, Provider_Name,
+                                          Scale_by_DRG_Charge) %>%
+  mutate("DRG_at_Cape" = if_else(DRG_Number %in% Cape_DRGs$DRG_Number, 
+                                  "Yes", "No"))
+
+# Verify that 78 DRGs are treated at Cape
+
+NJ_Cape_Subset %>% group_by(DRG_Number) %>% 
+  filter(DRG_at_Cape == 'Yes') %>% summarise(n())
+
+# Add variable to track Cape
+
+NJ_Cape_Subset <- NJ_Cape_Subset %>%
+  mutate("Cape" = if_else(Provider_ID == '310011', "Cape", "Not_Cape"))
+
+# Plot Charges vs. DRGs
+
+p_NJ_DRG_Cape_subset <- NJ_Cape_Subset %>% filter(DRG_at_Cape == "Yes") %>%
+  ggplot(aes(x=DRG_Number, y = Scale_by_DRG_Charge, color = Cape)) +
+  geom_point(size = 3, alpha = 0.5) + scale_color_hue(direction = -11) +
+  theme(axis.text.x = element_blank(), panel.grid = element_blank(), legend.position = "none") +
+  labs(title = "Charges for 78 Cape DRGs", 
+       x = "DRG Number",
+       y = "State Normalized DRG Charge",
+       subtitle = "Cape Highlighted")
+
+p_NJ_DRG_Cape_subset
+
+# Create DRG reference for Hunterdon
+
+Hunterdon_DRGs <- NJ_Providers %>% filter(Provider_ID == '310005') %>%
+  select(Provider_ID, Provider_Name, DRG_Number)
+
+NJ_Hunter_Subset <- NJ_Providers %>% select(DRG_Number, Provider_ID, Provider_Name,
+                                          Scale_by_DRG_Charge) %>%
+  mutate("DRG_at_Hunter" = if_else(DRG_Number %in% Hunterdon_DRGs$DRG_Number, 
+                                 "Yes", "No"))
+
+# Verify that 66 DRGs are treated at Cape
+
+NJ_Hunter_Subset %>% group_by(DRG_Number) %>% 
+  filter(DRG_at_Hunter == 'Yes') %>% summarise(n())
+
+# Add variable to track Hunterdon
+
+NJ_Hunter_Subset <- NJ_Hunter_Subset %>%
+  mutate("Cape" = if_else(Provider_ID == '310005', "Hunter", "Not_Hunter"))
+
+# Plot Charges vs. DRGs
+
+p_NJ_DRG_Hunter_subset <- NJ_Hunter_Subset %>% filter(DRG_at_Hunter == "Yes") %>%
+  ggplot(aes(x=DRG_Number, y = Scale_by_DRG_Charge, color = Cape)) +
+  geom_point(size = 3, alpha = 0.5) + scale_color_hue(direction = -11) +
+  theme(axis.text.x = element_blank(), panel.grid = element_blank(), legend.position = "none") +
+  labs(title = "Charges for 66 Hunterdon DRGs", 
+       x = "DRG Number",
+       y = "State Normalized DRG Charge",
+       subtitle = "Hunterdon Highlighted")
+
+p_NJ_DRG_Hunter_subset
+
+```
+
+```{r echo = FALSE, message = FALSE}
+
+grid.arrange(p_NJ_DRG_Cape_subset, p_NJ_DRG_Hunter_subset, nrow = 1)
+
+```
+
+#### Thus, the Charge patterns at Johns, Cape and Hunterdon appear systemic across a broad range of treatments rather being an artifact of treating a skewed combination of DRGs.
+
+#### <u>**Provider Discharge Variability vs Charges**</u>
+
+#### Providers report the number of Total Discharges - actual number of treatments or cases - per DRG.  Discharges were normalized within each State by DRG and then compared to the State normalized Charges.  The graph below plots the DRG Charge vs Discharges for Johns Hopkins, Cape and Hunterdon.  Linear regression did not identify any correlation between Charge and Discharges among these three Providers (p-value > 0.05).  The uniformity of Charge vs. Discharges across the DRGs suggests that these Providers are in some type of "steady state".  In other words, the infrastructure for the DRGs is established and processes are consistent such that the number of treatments does not trigger a Charge outside the Provider's norm.
+
+```{r include = FALSE, message = FALSE}
+# So the types of DRGs did not seem to affect Charge Patterns
+# But do the number of treatments(Total Discharges) affect Charge patterns.
+
+# Examine discharges by Charge
+# First normalize the number of discharges for each State by DRG
+
+NJ_Providers <- NJ_Providers %>%
+  group_by(DRG_Number) %>% 
+  mutate("Scale_by_DRG_Discharge" = scale(Provider_Total_Discharges))
+
+MD_Providers <- MD_Providers %>%
+  group_by(DRG_Number) %>%
+  mutate("Scale_by_DRG_Discharge" = scale(Provider_Total_Discharges))
+
+# Create a separate df to include Johns, Cape and Hunterdon
+
+Cape_Hunterdon <- NJ_Providers %>% filter(Provider_ID == '310011' |
+                                            Provider_ID == '310005') 
+
+Johns <- MD_Providers %>% filter(Provider_ID == '210009') 
+
+Cape_Hunter_Johns <- bind_rows(Cape_Hunterdon, Johns)
+
+# Add a variable in order to make a simpler legend
+
+Cape_Hunter_Johns <- Cape_Hunter_Johns %>%
+  mutate("Provider" = case_when(Provider_ID == '310005' ~ "NJ Hunterdon",
+                                Provider_ID == '210009' ~ "MD Johns Hopkins",
+                                Provider_ID == '310011' ~ "NJ Cape"))
+
+# Graph State Normalized Charges vs. State Normalized Discharges for the 3 Providers
+# Does not appear to be any trend in the Charge vs. Discharge
+
+p_Cape_Hunter_Johns <- Cape_Hunter_Johns %>% ggplot(aes(x = Scale_by_DRG_Discharge, 
+                                 y = Scale_by_DRG_Charge, color = Provider)) +
+  geom_point(size = 3) +
+  theme(panel.grid = element_blank()) +
+  labs(title = "Charges vs Number Discharges (Treatments)",
+       x = "State Normalized Number of Discharges", y = "State Normalized DRG Charge") 
+
+```
+
+```{r echo = FALSE, message = FALSE}
+
+p_Cape_Hunter_Johns
+
+```
+
+#### Charges vs. Discharges were then compared across all NJ and MD Providers.  Among the 64 NJ Providers, 8 demonstrated a negative association, 2 demonstrated a positive association, and 54 had no correlation (p-value < 0.05).  Among the 45 MD Providers, 9 demonstrated a negative association, 2 had a positive association, and 34 had no correlation (p-value < 0.05).  The table below summarizes the Providers with significant correlations along with the confidence intervals. 
+```{r include = FALSE, message = FALSE}
+
+# Run linear regression on merged MD_NJ Provider files to determine
+# if there are any significant associations between Charges and Total Discharges
+
+merge_NJ_MD_Providers <- bind_rows(MD_Providers, NJ_Providers)
+
+lm_NJ_MD_Charge_Discharge_Provider <- merge_NJ_MD_Providers %>% 
+  group_by(Provider_State, Provider_ID, Provider_Name) %>%
+  do(tidy(lm(Scale_by_DRG_Charge ~ Scale_by_DRG_Discharge, data=.)))
+
+# Find 95% CI intervals on linear model
+
+conf_NJ_MD_Charge_Discharge_Provider <- merge_NJ_MD_Providers %>% 
+  group_by(Provider_State,Provider_ID, Provider_Name) %>%
+  do(confint_tidy(lm(Scale_by_DRG_Charge ~ Scale_by_DRG_Discharge, data=.)))
+
+# Bind lm and confidence columns
+
+lm_NJ_MD_Charge_Discharge_Provider <- bind_cols(lm_NJ_MD_Charge_Discharge_Provider, 
+                                             conf_NJ_MD_Charge_Discharge_Provider)
+
+# Add column to assess significance ("NA" will be placeholder for intercept observation)
+
+lm_NJ_MD_Charge_Discharge_Provider <- lm_NJ_MD_Charge_Discharge_Provider %>%
+  mutate("Sig" = case_when(term == "Scale_by_DRG_Discharge" & p.value <= 0.05 ~ "Yes",
+                           term == "Scale_by_DRG_Discharge" & p.value > 0.05 ~ "No",
+                           term == "(Intercept)" ~ "NA"))
+
+
+# Create a table summary of lm Provider results - just show the Negative and Positives
+
+NJ_MD_Providers_Charge_vs_Discharge <- lm_NJ_MD_Charge_Discharge_Provider %>%
+  filter(Sig != "NA") %>%
+  mutate("Association" = case_when(Sig == "No" ~ "None",
+                                   Sig == "Yes" & estimate >0 ~ "Positive",
+                                   Sig == "Yes" & estimate <0 ~ "Negative")) %>%
+  select(Provider_State, Provider_ID, Provider_Name, Association, conf.low, conf.high) %>%
+  filter(Association != "None") %>%
+  arrange(Association)
+
+```
+
+```{r echo = FALSE, message = FALSE}
+
+NJ_MD_Providers_Charge_vs_Discharge %>% 
+  kable(caption = "NJ and MD Providers with Significant Correlations Between # Cases and Charge")
+
+```
+
+#### The slopes are quite variable among the Providers that show either negative or positive correlations between Charges and Discharges.  The mere presence of a slope suggests that these Providers are not in a "steady state".  That is, certain DRG Charges appear more sensitive to the number of treatments than others.    
+
+#### There are several possible reasons why a DRG Charge may be influenced by the number of Discharges.  The graph below shows the MD and NJ Providers with negative correlations. DRGs with few Discharges but high Charges may be the result of costly set up for new procedures at that location.  Alternatively, perhaps the treatment is not new to the facility, but, for whatever reason, economies of scale have not been realized.   
+
+```{r include = FALSE, message = FALSE}
+
+# Create df for plotting both negative and positive correlations
+# between Charge and Total Discharge
+
+
+NJ_MD_Pos_Neg_df <- merge_NJ_MD_Providers %>%
+  filter(Provider_ID == '310012' | Provider_ID == '310016' |
+           Provider_ID == '310021' | Provider_ID == '310022' |
+           Provider_ID == '310083' |
+           Provider_ID == '310091' | 
+           Provider_ID == '310108' | Provider_ID == '310112' |
+           Provider_ID == '310048' | Provider_ID == '310092'|
+           Provider_ID == '210003' | Provider_ID == '210007' |
+           Provider_ID == '210013' | Provider_ID == '210016' |
+           Provider_ID == '210023' |
+           Provider_ID == '210024' | 
+           Provider_ID == '210038' | Provider_ID == '210040'|
+           Provider_ID == '210054' | Provider_ID == '210030' | 
+           Provider_ID == '210043') %>%
+  mutate("Association_Charge_Discharge" = 
+           if_else(Provider_ID == '310048' |
+                     Provider_ID == '310092'|
+                     Provider_ID == '210030'|
+                     Provider_ID == '210043',"Positive", "Negative"))
+
+NJ_MD_Pos_Neg_df %>% group_by(Provider_State,Provider_ID, 
+                              Association_Charge_Discharge) %>% 
+  summarise(n()) %>% data.frame()
+
+# Filter to just the negative associations between Charge and number of treatments for NJ and MD
+
+p_NJ_MD_Neg <- NJ_MD_Pos_Neg_df %>%
+  filter(Association_Charge_Discharge == 'Negative') %>% 
+  ggplot(aes(x = Scale_by_DRG_Discharge, y = Scale_by_DRG_Charge,
+             col = factor(Provider_ID))) +
+  geom_point(size = 3, alpha = 0.4) +
+  theme(legend.position = "bottom", 
+        panel.grid = element_blank()) +
+  labs(title = "MD & NJ Providers | Negative Correlation | Charge vs #Cases",
+       x = "State Normalized Number of Discharges", 
+       y = "State Normalized DRG Charge",
+       col = "Provider ID") +
+  expand_limits(y = c(-2.0, 9), x = c(-2,5)) +
+  scale_y_continuous(breaks = seq(-2, 9, 2)) +
+  facet_grid(cols = vars(Provider_State)) +
+  geom_segment(x = 0, xend = 0, y = 9, yend = -2, color = "dark gray", 
+               size = 1, alpha = 0.6) +
+  geom_text(x = -0.5, y = 8, label = 
+              str_wrap("Few treatments, higher charge", width = 12), size = 3, color = "black", hjust = 1) +
+  geom_text(x = 2, y = 3, label = 
+              str_wrap("More treatments, lower charge", width = 15), size = 3, 
+            color = "black", hjust = 0)
+```
+
+```{r echo = FALSE, message = FALSE}
+
+p_NJ_MD_Neg
+
+```
+
+#### On the other hand, Providers with positive associations between increasing Charges with more Discharges may indicate a "Center of Excellence" for that DRG, thereby giving the Provider the liberty to charge more.  The higher Charges could also indicate that the Provider has not realized cost efficiency from greater volume.  The graph below shows the MD and NJ Providers with positive associations.
+
+```{r include = FALSE, message = FALSE}
+
+# Filter to just the positive associations between Charge and number of treatments for NJ and MD
+
+p_NJ_MD_Pos <- NJ_MD_Pos_Neg_df %>%
+  filter(Association_Charge_Discharge == 'Positive') %>% 
+  ggplot(aes(x = Scale_by_DRG_Discharge, y = Scale_by_DRG_Charge,
+             col = factor(Provider_ID))) +
+  geom_point(size = 3, alpha = 0.4) +
+  theme(legend.position = "bottom", 
+        panel.grid = element_blank()) +
+  labs(title = "MD & NJ Providers | Positive Correlation | Charge vs #Cases",
+       x = "State Normalized Number of Discharges", 
+       y = "State Normalized DRG Charge",
+       col = "Provider ID") +
+  facet_grid(cols = vars(Provider_State)) +
+    geom_text(x = -0.5, y = 8, label = 
+              str_wrap("Few treatments, high charge", width = 12), size = 3, 
+            color = "black", hjust = 1) +
+  geom_text(x = 3, y = 1.5, label = 
+              str_wrap("More treatments, higher charge", width = 15), size = 3, 
+            color = "black", hjust = 0)
+```
+
+```{r echo = FALSE, message = FALSE}
+
+p_NJ_MD_Pos
+
+```
+
+#### The above analysis shows that sometimes the number of Discharges for a DRG can be associated with either a lower or higher Charge among certain Providers.  Of course, it is unknown if the number of cases is directly influencing the Charge.  Nonetheless, the results suggest that certain Providers are not in "steady state" across the DRGs they treat, which may highlight improvement opportunities.
+
+### **3) Identifying State and Provider Reform Priorities**
+
+#### The MD-NJ analysis shows there is an inextricable link between Providers and States; Providers will inherently manifest State trends, at least to a degree, because of their location.  Given the dominating role of the State, reform efforts should first target the States that show the most systemic Overcharges.  A list of potentially more problematic Providers within a problematic State can then be identified. 
+
+#### Taking a "worst-of-the-worst" approach avoids a scatter shot strategy that may waste resources targeting outliers.  For instance, DRG 251 PERC CARDIOVASC PROC W/O CORONARY ARTERY STENT W/O MCC is the most expensive in Missouri (MO).  Meanwhile, most of MO’s DRGs are less than two (2) standard deviations from the National average.
+
+```{r include = FALSE, message = FALSE}
+
+# A look at MO in the context of which Providers are charging the most for each DRG.  Ultimately want to identify the most expensive States, but want to ensure that we don't focus on an outlier
+
+#Find Providers with most expensive DRGs
+
+# First create an ordered list of the DRG costs by State, most expensive to least to find 
+# which State owns the most expensive DRG
+
+cost_rank_max_charge <- test_drive_benchmark %>% 
+  group_by(DRG_Number, Provider_State, Provider_ID) %>%
+  summarise("Max_DRG_Normalized_Charge" = max(Scaled_Charge_DRG)) %>% 
+  arrange(DRG_Number, desc(Max_DRG_Normalized_Charge))  %>% group_by(DRG_Number) %>%
+  top_n(1, Max_DRG_Normalized_Charge) 
+
+# Count the Providers - there are 33 (out of a total of 3337)
+
+cost_rank_max_charge %>% group_by(Provider_State, Provider_ID) %>%
+  summarise("Number_Most_Costly_DRGs" = n()) %>% 
+  arrange(desc(Number_Most_Costly_DRGs)) %>%
+  data.frame()
+
+# Count the States - there are 7 States
+
+cost_rank_max_charge %>% group_by(Provider_State) %>%
+  summarise("Number_Most_Costly_DRGs" = n()) %>% 
+  arrange(desc(Number_Most_Costly_DRGs)) %>%
+  data.frame()
+
+# The most costly DRGs were concentrated into 33 Providers out of 3337
+
+# Count number of most expensive Providers vs. total 
+
+test_drive_benchmark %>% group_by(Provider_ID) %>% 
+  summarise("Unique Providers" = n_distinct(Provider_ID))
+
+# These most costly DRGs, however, were concentrated into just a few states
+
+# Interestingly, MO stands out for DRG 251
+
+cost_rank_max_charge %>% data.frame()
+
+p_Just_MO <- test_drive_benchmark %>% filter(Provider_State == 'MO') %>%
+  ggplot(aes(x = Scaled_Charge_DRG)) +
+  geom_histogram() +
+  labs(title = "MO DRG Charges", x = "Normalized National Charges by DRG") 
+
+p_Just_MO
+
+p_Just_MO_blow_up <- p_Just_MO + coord_cartesian(ylim=c(0,100)) +
+  annotate(geom = "text", x = 5, y = 10, 
+           label = "DRG 251", color = "red", size = 5)
+
+```
+
+```{r echo = FALSE, message = FALSE}
+
+p_Just_MO_blow_up
+
+```
+
+#### Provider CENTERPOINT MEDICAL CENTER OF INDEPENDENCE, LLC is responsible for the extreme DRG 251 Charge in MO.  Of the 86 DRGs treated at Centerpoint, however, most of their Charges are much more reasonable.
+
+```{r include = FALSE, message = FALSE}
+
+# The following code is designed to determine if the MO Centerpoint charge
+# is truly an outlier, as suspected.
+
+# Identify which MO Provider is charging so much for DRG 251
+# the MO Rouge Provider is ID 260095 (Centerpoint)
+
+test_drive_benchmark %>% 
+  filter(Provider_State == 'MO' & DRG_Number == '251') %>%
+  select(Provider_ID, Provider_Name, Provider_Avg_Covered_Charges, Scaled_Charge_DRG) %>%
+  arrange(desc(Scaled_Charge_DRG)) %>% data.frame()
+
+# MO Centerpoint is treating 86 DRGs
+
+test_drive_benchmark %>% filter(Provider_State == "MO") %>%
+  group_by(Provider_ID, Provider_Name) %>%
+  summarise("Number_DRGs" = n()) %>% arrange(desc(Number_DRGs)) %>%
+  data.frame()
+
+# Most of MO Centerpoint charges are reasonable.  One was at 2.5 and then DRG 251 was above 5
+
+p_MO_Centerpoint <- test_drive_benchmark %>% 
+  filter(Provider_State == 'MO' & Provider_ID == '260095') %>%
+  ggplot(aes(x = Scaled_Charge_DRG)) + 
+  geom_histogram() +
+  annotate(geom = "text", x = 5, y = 3, 
+           label = "DRG 251", color = "red", size = 5) +
+  labs(title = "MO Centerpoint DRG Charges - 86 DRGs", x = "Normalized National Charges by DRG") 
+
+```
+
+```{r echo = FALSE, message = FALSE}
+
+p_MO_Centerpoint 
+
+```
+
+#### Twenty-two (22) other MO Providers treat DRG 251, so a consumer isn't necessarily bound to Centerpoint for treatment.  In other words, Centerpoint is not in a unique position to Overcharge.  Centerpoint treated 19 cases of DRG 251, which corresponded to the State median number of treatments.  Therefore, it seems that Centerpoint had enough expertise to warrant at least some cost efficiencies.  Given the data available, no logical reason can be deduced for Centerpoint's extreme DRG 251 charge.   Thus, the high DRG 251 Charge appears to be an outlier, making both MO and Centerpoint unlikely candidates for major reform efforts.
+
+#### <u>**State Priorities**</u>
+
+#### MD was used to benchmark all State DRG charges for the following reasons:  
+* #### MD has the lowest Avg State Charge for 96 DRGs
+* #### MD has the lowest Avg Provider Charge for 100 DRGs
+
+#### Linear regression was run per DRG using MD as the reference by comparing Avg. Provider Charges.  States were first ranked by how many DRGs cost significantly more than MD (p-value < 0.05).  Next, States were ranked by the degree of their differences by summing their p-values; States with the smallest p-values are most extreme vs. MD.  The results identified a "Top 10 State Hit List".  All States in the "Top 10" have the biggest gap between their Charges and MD for all 100 DRGs.    
+
+```{r include = FALSE, message = FALSE}
+
+# Create a linear regression df and benchmark all State charges against MD
+# The goal is to identify the 10 most expensive States, as benchmarked vs. MD
+
+lm_State_df <- test_drive_benchmark %>% 
+  select(DRG_Number, Provider_State, Provider_Avg_Covered_Charges) 
+
+# Set up Provider_State as factor and confirm change
+
+lm_State_df$Provider_State <- as.factor(lm_State_df$Provider_State)
+
+glimpse(lm_State_df)
+
+# Set up MD as reference (intercept) in the linear model since it has the lowest DRG charges
+
+lm_State_df %>% group_by(DRG_Number, Provider_State) %>% 
+  summarise("Avg" = mean(Provider_Avg_Covered_Charges)) %>%
+  top_n(-1, Avg) %>% data.frame()
+
+lm_State_df <- lm_State_df %>% mutate("Provider_State_MD_Ref" =
+                            relevel(as.factor(Provider_State), ref = "MD"))
+
+# Create linear model, grouping by DRG and running across all States
+
+lm_State_result <- lm_State_df %>% 
+  group_by(DRG_Number) %>%
+  do(tidy(lm(Provider_Avg_Covered_Charges ~ Provider_State_MD_Ref, data=.)))
+
+# Clean up columns to isolate States 
+
+lm_State_result <- lm_State_result %>% 
+  separate(col = "term", into = c("term", "Provider_State"), sep = "f") 
+
+# Filter out 100 NA's for MD
+
+lm_State_result <- lm_State_result %>%
+  filter(!is.na(Provider_State))
+
+# Confirm that all estimates are positive, meaning that all States have higher charges than MD
+
+lm_State_result %>% filter(estimate <0)
+
+# Add variable to track which States were significantly different vs. MD
+
+lm_State_result <- lm_State_result %>%
+  mutate("Sig" = if_else(p.value > 0.05, "No", "Yes"))
+
+# View just the State observations that were significantly more expensive than MD
+
+Sig_Different_MD <- lm_State_result %>% 
+  filter(Sig == 'Yes') %>%
+  group_by(Provider_State) %>% 
+  summarise("Number_DRGs_Signficantly_More_Costly_vs_MD" = n()) %>%
+  arrange(desc(Number_DRGs_Signficantly_More_Costly_vs_MD)) %>%
+  data.frame()
+
+# Add up p.values to create another ranking variable.  The most negative p-values for
+# the DRGs that are significantly different will be the most extreme (more costly) vs. MD
+
+State_p_values <- lm_State_result %>%
+  filter(Sig == 'Yes') %>%
+  group_by(Provider_State) %>% 
+  summarise("Sum_p_value" = sum(p.value)) %>%
+  arrange(Sum_p_value)
+
+# merge p-values with States that States-DRGs that are different from MD
+
+Sig_Different_MD <- Sig_Different_MD %>%
+  left_join(select(State_p_values, Provider_State, Sum_p_value), 
+            by = "Provider_State") 
+
+# Rank first by number of different DRGs vs. MD, and then ascending p-values
+
+State_Hit_List <- Sig_Different_MD %>%
+  arrange(desc(Number_DRGs_Signficantly_More_Costly_vs_MD), Sum_p_value) %>%
+  rename("Degree_of_Difference (most to least)" = Sum_p_value)
+
+```
+
+```{r echo = FALSE, message = FALSE}
+
+kable(State_Hit_List[1:10, ], caption = "Top 10 State Hit List")
+
+```
+
+#### Population was assessed to determine if States on the "Hit List" had more Providers per capita.  It was hypothesized that Charges might be higher in States that weren't consolidating resources as well as other States.
+
+#### Census data from [2009-2010](https://www.census.gov/prod/2011pubs/11statab/pop.pdf) was extracted in order to be compatible with the CMS 2011 data set.  The number of Providers per 65+ year-old capita was compared across the States.  The graph below highlights the 10 States on the "Hit List" along with MD.  Many of the "Top 10" States either have similar Provider per capita ratios as MD or are randomly distributed against the backdrop of the other States.  Thus, it does not appear that people who live in States on the "Hit List" have lots more Provider options than less costly States.
+
+```{r include = FALSE, message = FALSE}
+
+#The next set of code will bring in census data to see if population
+# dynamics could account for high Charges in Top 10 Hit List (too many Providers per people)
+
+# Will pull census data from 2009-2010 to be compatible with the 2011 CMS data
+# extracted original census data into new df
+
+census <- read_csv("C:\\Users\\bliss\\Desktop\\Data Science\\Springboard\\_Capstone\\_Medicare\\_Final Report\\Summary.csv")
+
+# rename variables; get rid of back ticks
+
+census <- census %>% rename(Age_65_74_thousands = `65_74_thousands`, Age_75_Plus_thousands = 
+                              `75_Plus_thousands`, Provider_State = State)
+
+# convert Provider_state to factor
+
+census$Provider_State <- factor(census$Provider_State)
+
+# Determine number of Providers per State; then merge with census data
+
+state_num_Providers <- test_drive_benchmark %>% group_by(Provider_State, Provider_ID) %>%
+  summarise("Line_Items_Per_Provider" = n()) %>%
+  group_by(Provider_State) %>% summarise("Number_Providers" = n())
+
+# Convert Provider_State to factor then merge
+
+state_num_Providers$Provider_State <- factor(state_num_Providers$Provider_State)
+
+census <- census %>% left_join(state_num_Providers, by = "Provider_State")
+
+# Sum up people 65+ years
+
+census <- census %>% mutate("Sum_65_Plus" = Age_65_74_thousands + Age_75_Plus_thousands)
+
+# Calculate number of Providers per 65+ year olds and overall pop
+
+census <- census %>% mutate("Providers_Per_1000_65Plus" = Number_Providers/Sum_65_Plus)
+
+census <- census %>% mutate("Providers_Per_1000_Overall_Pop" = Number_Providers/Overall_Pop_Thousands)
+
+# merge number DRGs that are different and p-values from linear model
+# in order to highlight the Top 10 Hit List States vs. MD
+
+# Convert Provider_State to factor prior to merging
+
+Sig_Different_MD$Provider_State <- factor(Sig_Different_MD$Provider_State)
+
+census <- census %>% left_join(Sig_Different_MD, by = "Provider_State")
+
+# Identify Top 10 States and MD in order to map on plots
+
+census <- census %>% 
+  mutate("MD_Yes_No" = if_else(Provider_State == 'MD', "Yes", "No"))
+
+# Identify States on top 10 hit list
+
+census <- census %>% 
+  mutate("Top_10" = if_else(Provider_State == 'TX' | Provider_State == 'CA' |
+                                                 Provider_State == 'FL' | Provider_State == 'NY' |
+                                                 Provider_State == 'PA' | Provider_State == 'TN' |
+                                                 Provider_State == 'AL' | Provider_State == 'NJ' |
+                                                 Provider_State == 'WA' | Provider_State == 'NV', "Yes",
+                                               "No"))
+
+# Ensure variables are factors
+
+census$MD_Yes_No <- factor(census$MD_Yes_No)
+
+census$Top_10 <- factor(census$Top_10)
+
+# Create plots - P1 will look at number of Providers per 65+ Pop
+# P2 will look at number of Providers per overall pop vs. pop density
+# A more dense population will likely result in fewer Providers
+
+P1 <- census %>% ggplot(aes(x = Provider_State, y = Providers_Per_1000_65Plus, color = as.factor(Top_10))) +
+  geom_point(size = 3) +
+  geom_point(data = census %>% filter(MD_Yes_No == "Yes"), color = "black", size = 3) +
+  geom_text(data = census %>% filter(MD_Yes_No == "Yes"), label = "MD", color = "black",
+            vjust = 1.5) + 
+  theme(legend.position = "none", axis.text.x = element_blank(), panel.grid = element_blank()) +
+  labs(title = "Providers Per 1000 People Ages 65+ vs State", 
+       subtitle = "\"Top 10 State Hit List\" Highlighted", y = "Providers Per 1000 People Ages 65+")
+
+
+P1
+
+# Washington DC has a very high pop density of 9766 people per square mile, typical of a large
+# city; it was removed because it is not a state (very small area)
+
+```
+
+```{r echo = FALSE, message = FALSE}
+P1
+
+```
+
+#### The variability in the Provider per 65+ year-old capita shown above will be affected, in part, by population densities; more densely populated States will require fewer Providers than less densely populated regions.
+
+#### The following graph compares the Provider per overall population capita against the State's population density.  Again, States on the "Top 10 Hit List" are highlighted along with MD.  In general, Providers per capita decreases as population density increases. Providers per capita appear to level off above 300 people per square mile.  Perhaps a certain number of Providers is necessary to meet the demands of its population regardless of density growth above a certain threshold.  On the other hand, it is striking that NJ, the second most costly State vs. MD, has double the population density but similar Providers per capita.  Perhaps NJ does have more treatment options than it needs.
+
+```{r include = FALSE, message = FALSE}
+
+# The following code will examine Providers per Capita vs. pop density
+# Again, DC will be filtered out since it is a city vs. a State.
+
+P2 <- census %>% filter(Provider_State != 'DC') %>%
+  ggplot(aes(x = Pop_Per_Sq_Mi, y = Providers_Per_1000_Overall_Pop, color = Top_10)) +
+  geom_point(size = 3) +
+  geom_point(data = census %>% filter(MD_Yes_No == "Yes"), color = "black", size = 3) +
+  geom_text(data = census %>% filter(MD_Yes_No == "Yes"), label = "MD", color = "black",
+            vjust = 1.5) +
+  annotate("segment", x = 1174, xend = 1174, y = 0.012, yend = 0.008, color = "black",
+           size = 1, arrow = arrow()) +
+  annotate("text", x = 1170, y = 0.013, label = "NJ", color = "black",
+           size = 5) +
+  theme(legend.position = "none", panel.grid = element_blank()) +
+  labs(title = "Providers Per 1000 People All Ages vs Pop Density",
+       subtitle = "\"Top 10 State Hit List\" Highlighted",
+       y = "Providers Per 1000 People All Ages", x = "Pop Per Square Mile All States")
+
+```
+
+```{r echo = FALSE, message = FALSE}
+P2
+
+```
+
+#### <u>**Provider Priorities**</u>
+
+#### The previous analysis showed relatively consistent Charge patterns within a Provider regardless of the DRGs treated.  Charges did, however, sometimes correlate with the number of treatments.  Providers in the "Top 10 State Hit List" were highlighted if they demonstrated either a negative or positive association between Charges and the number of Total Discharges.  Sensitivity in the Charge depending upon the number of treatments may indicate that a Provider is "out of equilibrium" across the DRGs treated at its facility.  Perhaps the infrastructure is not established for a particular DRG, thereby requiring a substantial investment for the first number of treatments.  On the other hand, perhaps infrastructure is in place, but a Provider is not realizing cost efficiencies.  Providers that charge more with increased volume may be known as "Centers of Excellence", thereby granting them the liberty to charge more.  A less favorable interpretation is that the Provider, for whatever reason, is again not realizing cost efficiencies for certain DRGs.
+
+#### As previously done with MD and NJ, Charges and Discharges were normalized within each State prior to linear regression.  The table below summarizes the number of Providers in the "Top 10" with either negative or positive associations.  The IDs of each of these Providers along with the confidence intervals are available but not shown.   
+
+```{r include = FALSE, message = FALSE}
+
+# Now that a State hit list has been made, Create hit list of Providers within 10 State Hit List.  Providers that show Charge sensitivity vs. 
+# number of treatments will be prioritized for reform
+
+# Create a base Provider hit list with relevant variables
+
+hit_list_total_Providers <- test_drive_benchmark %>% 
+  filter(Provider_State == 'CA' | Provider_State == 'NJ' |
+           Provider_State == 'NV' | Provider_State == 'PA' |
+           Provider_State == 'TX' | Provider_State == 'FL' |
+           Provider_State == 'NY' | Provider_State == 'WA' |
+           Provider_State == 'AL' | Provider_State == 'TN') %>%
+  select(DRG_Number, DRG_Description, Provider_ID, Provider_Name, Provider_State,
+         Provider_Total_Discharges, Provider_Avg_Covered_Charges)
+
+# Count number of Providers Per State
+# Wow - does TX really have more than CA despite a much smaller population???
+
+Number_Providers_State_hit_list <- hit_list_total_Providers %>%
+  group_by(Provider_State, Provider_ID) %>% summarise(n()) %>%
+  group_by(Provider_State) %>% summarise("Total_Providers" = n()) %>%
+  arrange(desc(Total_Providers))
+
+Number_Providers_State_hit_list
+
+# Yes, it is true CA has 299 and TX has 310...need to dig into this more
+# Actually, this observation was why I pulled in census data.
+# TX has more providers than CA, despite having a smaller overall pop.
+# However, TX is less densely populated...we saw above that Provider per Capita tend to drop as population density increases
+
+test_drive_benchmark %>% filter(Provider_State == 'TX' | Provider_State == 'CA') %>%
+  group_by(Provider_State, Provider_ID) %>% summarise(n()) %>%
+  group_by(Provider_State) %>% summarise(n())
+
+# Normalize Charge and Discharge by State-DRG to prepare for linear model
+
+hit_list_total_Providers <- hit_list_total_Providers %>%
+  group_by(Provider_State, DRG_Number) %>%
+  mutate("Scale_by_State_DRG_Charge" = scale(Provider_Avg_Covered_Charges)) %>%
+  mutate("Scale_by_State_DRG_Discharge" = scale(Provider_Total_Discharges))
+
+# Run lm to explore associations between Charge and Discharge
+# A linear model cannot be done on Providers that only treat 2 or fewer DRGs - these result in NaN
+# 79 NaN's corresponding to 58 Providers
+
+lm_state_hit_list_model <- hit_list_total_Providers %>% 
+  group_by(Provider_State, Provider_ID, Provider_Name) %>%
+  do(tidy(lm(Scale_by_State_DRG_Charge ~ Scale_by_State_DRG_Discharge, data=.)))
+
+sum(is.nan(lm_state_hit_list_model$p.value))
+
+# Convert Provider_ID to factor so it can be grouped
+
+lm_state_hit_list_model$Provider_ID <- factor(lm_state_hit_list_model$Provider_ID)
+
+lm_state_hit_list_model %>% filter(is.na(p.value)) %>% group_by(Provider_ID) %>%
+  summarise(n())
+
+# Find confidence intervals for slopes
+# warnings resulted from 58 Providers that had 2 or fewer Discharges - no linear model
+
+conf_state_hit_list_model <- hit_list_total_Providers %>% 
+  group_by(Provider_State, Provider_ID, Provider_Name) %>%
+  do(confint_tidy(lm(Scale_by_State_DRG_Charge ~ Scale_by_State_DRG_Discharge, data=.)))
+
+conf_state_hit_list_model$Provider_ID <- factor(conf_state_hit_list_model$Provider_ID)
+
+# Bind lm and confidence columns
+
+# First remove 79 NaN's from linear model
+
+lm_state_hit_list_model <- lm_state_hit_list_model %>% 
+  filter(!is.nan(p.value))
+
+
+lm_state_hit_list_model <- bind_cols(lm_state_hit_list_model, 
+                                             conf_state_hit_list_model)
+
+
+# Add column to assess significance ("NA" will be placeholder for intercept observation)
+
+lm_state_hit_list_model <- lm_state_hit_list_model %>%
+  mutate("Sig" = case_when(term == "Scale_by_State_DRG_Discharge" & p.value <= 0.05 ~ "Yes",
+                           term == "Scale_by_State_DRG_Discharge" & p.value > 0.05 ~ "No",
+                           term == "(Intercept)" ~ "NA"))
+
+# remove NA (intercept) observations from model output
+
+lm_state_hit_list_model <- lm_state_hit_list_model %>% filter(Sig != 'NA')
+
+
+# Frequency table shows that 215 Providers of the top10 State hit list
+# had a significant association between
+# DRG Charge and Treatment but 1136 did not
+
+table(lm_state_hit_list_model$Sig)
+
+# Add an association variable to model df
+
+lm_state_hit_list_model <- lm_state_hit_list_model %>%
+  mutate("Association_Charge_Discharge" = case_when(Sig == "No" ~ "None",
+                                   Sig == "Yes" & estimate >0 ~ "Positive",
+                                   Sig == "Yes" & estimate <0 ~ "Negative"))
+ 
+
+# merge lm results into original State hit list df
+
+# first clean up lm merge df to avoid getting duplicate columns after merge
+
+lm_merge <- lm_state_hit_list_model %>% ungroup %>%
+  select(Provider_ID, Association_Charge_Discharge)
+
+
+# Convert Provider_ID to factor in original hit list
+
+hit_list_total_Providers$Provider_ID <- factor(hit_list_total_Providers$Provider_ID)
+                                               
+hit_list_total_Providers <- hit_list_total_Providers %>% 
+    left_join(lm_merge, by = "Provider_ID")
+
+# There 79 observations from 58 Providers in which a linear model could not be run because of 2 or fewer discharges
+
+sum(is.na(hit_list_total_Providers$Association_Charge_Discharge))
+
+# Summarise the number of associations by Provider ID - filter out the NA's
+
+hit_list_total_Providers %>% 
+  group_by(Provider_State, Provider_ID, Association_Charge_Discharge) %>%
+  summarise(n()) %>% group_by(Provider_State, Association_Charge_Discharge) %>% 
+  summarise("Number_Providers" = n()) %>% 
+  filter(!is.na(Association_Charge_Discharge))
+
+# Summarize the number of positive / negative Provider associations per State
+# Filter out NA's and none associations 
+
+Provider_hit_list_sum <- hit_list_total_Providers %>% 
+  group_by(Provider_State, Provider_ID, Association_Charge_Discharge) %>%
+  summarise(n()) %>% group_by(Provider_State, Association_Charge_Discharge) %>% 
+  summarise("Number_Providers" = n()) %>% 
+  filter(!is.na(Association_Charge_Discharge) & Association_Charge_Discharge != 'None')
+ 
+# Spread Association_Charge_Discharge variable to make it conducive to merging with 
+# Number_Providers_State_hit_list
+
+Provider_hit_list_sum <- Provider_hit_list_sum %>%
+  spread(key = Association_Charge_Discharge, value = Number_Providers)
+
+# merge this list with the previous one that shows the total number of Providers
+
+Number_Providers_State_hit_list <- Number_Providers_State_hit_list %>%
+  left_join(Provider_hit_list_sum, by = "Provider_State")
+
+# clean up Provider Hit List summary
+
+Number_Providers_State_hit_list <- Number_Providers_State_hit_list %>%
+  rename("Providers_with_Neg_Association" = Negative,
+         "Providers_with_Pos_Association" = Positive)
+
+# Confirm that there are still 215 Providers with significant associations
+
+sum(Number_Providers_State_hit_list$Providers_with_Neg_Association, na.rm = TRUE) + 
+  sum(Number_Providers_State_hit_list$Providers_with_Pos_Association, na.rm = TRUE)
+
+# Create a df to list the actual Provider IDs that have positive/negative associations
+
+Provider_hit_list_all_IDs <- hit_list_total_Providers %>% 
+  group_by(Provider_State, Provider_ID, Association_Charge_Discharge) %>%
+  summarise("Charges" = n()) %>% filter(Association_Charge_Discharge != 'None') %>%
+  select(-Charges)
+
+```
+
+```{r echo = FALSE, message = FALSE}
+
+Number_Providers_State_hit_list %>% kable(caption = "Top 10 State Provider Hit List")
+
+```
+
+## *Summary*
+
+#### Using the 2011 data set, MD and NJ were used to develop a broader, National analysis given their unique status as State neighbors with some of the most extreme Charge differences.  State patterns typically dictated Provider Charges thereby making a State assessment the first order of business.
+
+#### All States were benchmarked against MD since MD had the lowest Average Provider Charges per DRG.  A "Top 10 State Hit List" was developed using linear regression to identify which State Charges were most different from MD.  All 100 DRGs in the “Hit List” cost significantly more in each State versus treatments in MD.  The “Top 10” States, ordered from most extreme to less extreme, were the following: CA, NJ, NV, PA, TX, FL, NY, WA, AL, and TN. 
+
+#### Provider Charges typically did not vary by the types of DRGs treated, but they did occasionally vary by Total Discharges for a DRG (number of treatments).  Charge sensitivity vs volume, as identified through linear regression, may indicate that a Provider has yet to realize cost efficiencies for certain DRGs.  Unrealized efficiencies, however, may not explain all the trends between Charge and Total Discharges.  Exceptional quality may elicit higher Charges if a Provider is known to be a “Center of Excellence”.  Thus, the "Top 10 State Hit List" was further refined by identifying Providers that showed significant fluctuations between DRG Charge and Total Discharges.  
+
+## *Recommendations*
+
+#### 1. At the risk of stating the obvious, consider reporting Charges post insurance negotiations.
+
+* #### The AHA claims that reported Charges are not accurate because they serve as the precursor to third-party negotiations. Total Payments, however, are reported after final reimbursements are complete, presumably when true Charges would also be known.  This project was originally viewed through the lens of increasing price transparency for consumers.  But perhaps, if enough Providers banned together, they could rattle closed-door negotiations to facilitate more transparency across Providers and insurers.  Increasing reimbursement visibility would increase financial consistency and reliability.
+
+* #### For instance, MD receives more in absolute dollars than NJ to yield a ~94% reimbursement rate for all its DRGs.  Meanwhile, NJ’s reimbursements are not only lower but much more variable.  Financial reliability would ease some of the pressures on a Provider, which in turn would benefit the consumer.
+
+#### 2. Investigate MD’s model to determine if certain aspects can be applied to the “Top 10 State Hit List”.
+
+* #### All 100 DRGs treated in the “Top 10 State Hit List” cost the most in the country.  State regulations, or lack thereof, likely govern a Provider’s Charge behavior rather than population dynamics.  For the most part, the number of Providers per capita showed relatively consistent patterns between costly versus less costly States.  
+
+* #### Follow-up research showed that MD has a longstanding, [all-payer system](https://www.beckershospitalreview.com/finance/has-maryland-found-a-solution-to-the-u-s-healthcare-cost-crisis.html).  Providers are reimbursed the same amount regardless if the insurer is public or private.  More recently, MD implemented a global budgeting system to consolidate resources, giving Providers freedom to specialize without having to worry about “filling beds” to stay financially solvent.
+
+#### 3. Determine if certain Providers could benefit from streamlining resources to improve efficiency.
+
+* #### Some Providers showed higher Charges depending upon the number of treatments.  Focusing on these Providers in the "Top 10 Hit List" could serve as a start, but even in the "Rock Star" State of MD, some Providers also exhibited this behavior.
+
+* #### Examine treatment options in NJ to see if its high number of Providers per capita is warranted given its dense population.  Providers per capita decrease as population density increases, but NJ had a similar Providers per capita as MD with double the population density.  If all Providers are needed, perhaps services could be consolidated. 
+
+#### 4. Assess Charges at Providers that show increased Charges with more treatments to scout out “Centers of Excellence” in order to share “Best Practices”.
+
+* #### Improving quality among other Providers admittedly may reduce revenue at the original “Center of Excellence” as competition increases.  On the other hand, collaboration among Providers could lead to more specialization, essentially letting Providers in close proximity become their own “Centers of Excellence” for certain treatments.  Either outcome would benefit the consumer.
+
+## *Appendix - Definition of Terms*
+
+* #### Provider = Hospital
+* #### DRG = Treated medical condition.  There are 100 DRGs in the 2011 file.
+* #### Total Discharges = Number of treated cases for a particular DRG
+* #### Avg. Covered Charge = Avg. hospital bill for a particular DRG
+* #### Avg. Medicare Payments = Avg. Medicare reimbursement for a particular DRG
+* #### Avg. Total Payments = Avg. total reimbursements for a particular DRG (Medicare, copays, insurance companies, etc.). Total Payments are final; no outstanding charges are pending.
+
+
